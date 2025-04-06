@@ -49,18 +49,5 @@ def index(request: HttpRequest) -> JsonResponse:
 """Common"""
 
 start = bot.message_handler(commands=["start"])(start)
-admin = bot.message_handler(commands=["admin"])(admin_menu)
-newsletter = bot.callback_query_handler(lambda c: c.data == "newsletter")(newsletter)
-events_menu = bot.callback_query_handler(lambda c: c.data == "events_menu")(events_menu)
-FAQ = bot.callback_query_handler(lambda c: c.data == "FAQ")(FAQ)
-main_video_menu = bot.callback_query_handler(lambda c: c.data == "main_video_menu")(menu_video)
-check_subscription = bot.callback_query_handler(lambda c: c.data == "check_subscription")(start_registration_call)
-menu_call = bot.callback_query_handler(lambda c: c.data == "main_menu")(menu_call)
-coins_menu = bot.callback_query_handler(lambda c: c.data == "coins_menu")(coins_menu)
-'coins_farm = bot.callback_query_handler(lambda c: c.data == "coins_farm")(coins_farm)'
-coins_trade = bot.callback_query_handler(lambda c: c.data == "coins_trade")(coins_trade)
-profile = bot.callback_query_handler(lambda c: c.data == "profile")(profile)
-referal_menu = bot.callback_query_handler(lambda c: c.data == "referal_menu")(referal_menu)
-get_ref_link = bot.callback_query_handler(lambda c: c.data == "get_referal_link")(get_ref_link)
-event_check = bot.callback_query_handler(lambda c: c.data.startswith("event_check_"))(event_check)
-send_goods_to_admin = bot.callback_query_handler(lambda c: c.data.startswith("goods_"))(send_goods_to_admin)
+daily_report = bot.callback_query_handler(lambda c: c.data == "daily_report")(daily_report)
+weekly_report = bot.callback_query_handler(lambda c: c.data == "weekly_report")(weekly_report)

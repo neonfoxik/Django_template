@@ -10,8 +10,8 @@ class User(models.Model):
         max_length=35,
         verbose_name='Имя',
     )
-    user_tg_name = models.CharField(
-        max_length=35,
+    avito_api_key = models.CharField(
+        max_length=50,
         verbose_name='секретный авито токен',
         null=True,
         blank=True,

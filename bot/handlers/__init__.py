@@ -1,2 +1,2 @@
-from .common import start, menu_call, menu_m, FAQ, coins_menu, coins_trade, profile, referal_menu, send_goods_to_admin, event_check, menu_video, events_menu #coins_farm
-from .registration import start_registration, start_registration_call
+from .common import start, menu_call, menu_m, daily_report, weekly_report
+from .registration import start_registration
