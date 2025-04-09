@@ -49,5 +49,8 @@ def index(request: HttpRequest) -> JsonResponse:
 """Common"""
 
 start = bot.message_handler(commands=["start"])(start)
+profile = bot.callback_query_handler(lambda c: c.data == "profile")(profile)
 daily_report = bot.callback_query_handler(lambda c: c.data == "daily_report")(daily_report)
 weekly_report = bot.callback_query_handler(lambda c: c.data == "weekly_report")(weekly_report)
+update_api_key = bot.callback_query_handler(lambda c: c.data == "update_api_key")(update_api_key)
+back_to_menu = bot.callback_query_handler(lambda c: c.data == "back_to_menu")(back_to_menu)

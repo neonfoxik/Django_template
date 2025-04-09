@@ -1,2 +1,21 @@
-from .common import start, menu_call, menu_m, daily_report, weekly_report
-from .registration import start_registration
+from bot.handlers.common import (
+    menu_m,
+    profile,
+    daily_report,
+    weekly_report,
+    start,
+    update_api_key,
+    back_to_menu,
+    save_new_api_key
+)
+
+__all__ = [
+    'menu_m',
+    'profile',
+    'daily_report',
+    'weekly_report',
+    'start',
+    'update_api_key',
+    'back_to_menu',
+    'save_new_api_key'
+]

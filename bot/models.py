@@ -10,9 +10,16 @@ class User(models.Model):
         max_length=35,
         verbose_name='Имя',
     )
-    avito_api_key = models.CharField(
+    client_id = models.CharField(
         max_length=50,
-        verbose_name='секретный авито токен',
+        verbose_name='Client ID Авито',
+        null=True,
+        blank=True,
+        default="none",
+    )
+    client_secret = models.CharField(
+        max_length=100,
+        verbose_name='Client Secret Авито',
         null=True,
         blank=True,
         default="none",
