@@ -6,7 +6,8 @@ from bot.handlers.common import (
     start,
     update_api_key,
     back_to_menu,
-    save_new_api_key
+    save_new_api_key,
+    account_stats
 )
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     'start',
     'update_api_key',
     'back_to_menu',
-    'save_new_api_key'
+    'save_new_api_key',
+    'account_stats'
 ]

@@ -365,6 +365,91 @@ def weekly_report(call):
         logger.error(f"Ошибка при получении недельного отчета: {e}")
         bot.send_message(user_id, f"Произошла ошибка: {e}")
 
+def account_stats(call):
+    """Отправка отчета о состоянии аккаунта"""
+    user_id = call.from_user.id
+    try:
+        user = User.objects.get(telegram_id=user_id)
+        
+        if not user.client_secret or user.client_secret == "none":
+            markup = InlineKeyboardMarkup()
+            btn_update = InlineKeyboardButton("Обновить Client Secret", callback_data="update_api_key")
+            btn_back = InlineKeyboardButton("Назад", callback_data="back_to_menu")
+            markup.add(btn_update).add(btn_back)
+            
+            bot.send_message(
+                user_id, 
+                "⚠️ У вас не установлен Client Secret Авито. Нажмите кнопку, чтобы установить.",
+                reply_markup=markup
+            )
+            return
+        
+        # Отправляем сообщение о загрузке данных
+        wait_message = bot.send_message(user_id, "⏳ Загрузка данных о состоянии аккаунта...")
+        
+        api_service = AvitoApiService(user.client_id, user.client_secret)
+        
+        # Проверяем, можем ли получить токен доступа
+        token = api_service.get_access_token()
+        if not token:
+            bot.delete_message(user_id, wait_message.message_id)
+            
+            markup = InlineKeyboardMarkup()
+            btn_update = InlineKeyboardButton("Обновить Client Secret", callback_data="update_api_key")
+            btn_back = InlineKeyboardButton("Назад", callback_data="back_to_menu")
+            markup.add(btn_update).add(btn_back)
+            
+            bot.send_message(
+                user_id, 
+                "⚠️ Ошибка при получении токена доступа. Проверьте правильность Client Secret.",
+                reply_markup=markup
+            )
+            return
+        
+        account_data = api_service.get_account_stats()
+        
+        # Проверяем наличие ошибок в данных
+        if "error" in account_data:
+            bot.delete_message(user_id, wait_message.message_id)
+            
+            markup = InlineKeyboardMarkup()
+            btn_update = InlineKeyboardButton("Обновить Client Secret", callback_data="update_api_key")
+            btn_retry = InlineKeyboardButton("Повторить", callback_data="account_stats")
+            btn_back = InlineKeyboardButton("Назад", callback_data="back_to_menu")
+            markup.add(btn_retry).add(btn_update).add(btn_back)
+            
+            error_message = account_data["error"]
+            
+            bot.send_message(
+                user_id, 
+                f"⚠️ Произошла ошибка при получении данных от API Авито:\n\n"
+                f"{error_message}\n\n"
+                "Возможные причины:\n"
+                "- Неверный или истекший Client Secret\n"
+                "- Сервер Авито временно недоступен\n"
+                "- Недостаточно прав для получения данных\n\n"
+                "Попробуйте обновить Client Secret или повторить запрос позже.",
+                reply_markup=markup
+            )
+            return
+        
+        formatted_stats = api_service.format_account_stats(account_data)
+        
+        # Удаляем сообщение о загрузке
+        bot.delete_message(user_id, wait_message.message_id)
+        
+        bot.send_message(user_id, formatted_stats, reply_markup=main_markup)
+    except User.DoesNotExist:
+        bot.send_message(user_id, "Пользователь не найден. Введите /start для регистрации.")
+    except Exception as e:
+        logger.error(f"Ошибка при получении отчета о состоянии аккаунта: {e}")
+        if 'wait_message' in locals():
+            try:
+                bot.delete_message(user_id, wait_message.message_id)
+            except:
+                pass
+        bot.send_message(user_id, f"Произошла ошибка: {e}", reply_markup=main_markup)
+
 # Обновляем главный обработчик для команды start
 def start(message):
     """Обработчик команды /start"""
