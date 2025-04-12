@@ -2,19 +2,23 @@ import requests
 import logging
 import datetime
 from django.conf import settings
+from bot.models import User, UserBalance
+from django.db.models import Q
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
 
 class AvitoApiService:
     """Сервис для работы с API Авито"""
     
-    def __init__(self, client_id, client_secret):
-        """Инициализация с client_id и client_secret"""
+    def __init__(self, client_id, client_secret, user=None):
+        """Инициализация с client_id, client_secret и объектом пользователя"""
         self.client_id = client_id
         self.client_secret = client_secret
         self.api_url = "https://api.avito.ru"
         self.access_token = None
         self.token_expires_at = None
+        self.user = user  # Добавляем пользователя, чтобы иметь доступ к его данным
     
     def get_access_token(self):
         """Получение токена доступа"""
@@ -158,6 +162,76 @@ class AvitoApiService:
             balance_data = response.json()
             logger.info(f"Получен ответ о балансе: {balance_data}")
             
+            # Получаем значение текущего баланса в рублях (делим на 100, т.к. значение в копейках)
+            current_wallet_balance = balance_data.get("balance", 0) / 100 if "balance" in balance_data else 0
+            
+            # Если есть привязанный пользователь, обновляем его баланс и историю
+            if self.user:
+                # Обновляем или создаем запись баланса на текущий день
+                today = datetime.date.today()
+                balance_record, created = UserBalance.objects.update_or_create(
+                    user=self.user,
+                    date=today,
+                    defaults={'amount': Decimal(str(current_wallet_balance))}
+                )
+                
+                # Получаем баланс за предыдущий день
+                yesterday = today - datetime.timedelta(days=1)
+                previous_balance_record = UserBalance.objects.filter(
+                    user=self.user,
+                    date=yesterday
+                ).first()
+                
+                # Если есть запись за вчерашний день, рассчитываем расходы и пополнения
+                if previous_balance_record:
+                    previous_wallet_balance = float(previous_balance_record.amount)
+                    
+                    # Если текущий баланс больше предыдущего, было пополнение
+                    if current_wallet_balance > previous_wallet_balance:
+                        daily_deposit = current_wallet_balance - previous_wallet_balance
+                        daily_expenses = 0
+                    else:
+                        # Иначе были расходы
+                        daily_expenses = previous_wallet_balance - current_wallet_balance
+                        daily_deposit = 0
+                else:
+                    # Если нет записи за предыдущий день, используем прямой запрос к API
+                    previous_wallet_balance = self.get_previous_wallet_balance()
+                    
+                    # Если предыдущий баланс был получен успешно, рассчитываем изменения
+                    if previous_wallet_balance > 0:
+                        if current_wallet_balance > previous_wallet_balance:
+                            daily_deposit = current_wallet_balance - previous_wallet_balance
+                            daily_expenses = 0
+                        else:
+                            daily_expenses = previous_wallet_balance - current_wallet_balance
+                            daily_deposit = 0
+                    else:
+                        # Если не удалось получить предыдущий баланс, устанавливаем значения в 0
+                        daily_expenses = 0
+                        daily_deposit = 0
+            else:
+                # Если нет привязанного пользователя, используем прямой запрос к API
+                previous_wallet_balance = self.get_previous_wallet_balance()
+                
+                # Если текущий баланс больше предыдущего, было пополнение
+                if current_wallet_balance > previous_wallet_balance:
+                    daily_deposit = current_wallet_balance - previous_wallet_balance
+                    daily_expenses = 0
+                else:
+                    # Иначе были расходы
+                    daily_expenses = previous_wallet_balance - current_wallet_balance
+                    daily_deposit = 0
+            
+            # Заполняем статистику текущих расходов и пополнений
+            current_stats["total_expenses"] = daily_expenses
+            current_stats["total_deposit"] = daily_deposit
+            
+            # Заполняем статистику предыдущих расходов (в данном случае это будет 0, 
+            # так как мы не отслеживаем расходы за позавчера)
+            previous_stats["total_expenses"] = 0
+            previous_stats["total_deposit"] = 0
+            
             # Получаем список объявлений пользователя без ограничения на 50
             try:
                 all_items = []
@@ -200,9 +274,10 @@ class AvitoApiService:
                 
                 # Если есть объявления, получаем их статистику
                 if item_ids:
-                    # Получаем статистику по объявлениям за последние 30 дней
+                    # Получаем статистику по объявлениям за текущий день
                     today = datetime.datetime.now()
-                    thirty_days_ago = today - datetime.timedelta(days=1)
+                    yesterday = today - datetime.timedelta(days=1)
+                    day_before_yesterday = today - datetime.timedelta(days=2)
                     
                     # Приведем список item_ids к нужному виду перед отправкой
                     # API позволяет отправить не более 200 ID за один запрос
@@ -227,7 +302,7 @@ class AvitoApiService:
                             logger.info(f"Запрашиваем статистику объявлений с URL: {stats_url}")
                             
                             stats_payload = {
-                                "dateFrom": thirty_days_ago.strftime("%Y-%m-%d"),
+                                "dateFrom": yesterday.strftime("%Y-%m-%d"),
                                 "dateTo": today.strftime("%Y-%m-%d"),
                                 "fields": ["uniqViews", "uniqContacts", "uniqFavorites"],
                                 "itemIds": chunk_ids,
@@ -237,53 +312,32 @@ class AvitoApiService:
                             logger.info(f"Запрос статистики с payload: {stats_payload}")
                             stats_response = requests.post(stats_url, headers=stats_headers, json=stats_payload)
                             logger.info(f"Получен ответ с кодом: {stats_response.status_code}")
-                            
-                            if stats_response.status_code == 200:
-                                stats_data = stats_response.json()
-                                logger.info(f"Получен успешный ответ от API статистики: {stats_data}")
-                                
-                                # Данные приходят в формате, описанном в документации
-                                stats_items = stats_data.get("result", {}).get("items", [])
-                                
-                                # Обрабатываем каждое объявление в ответе
-                                for item_stat in stats_items:
-                                    # Получаем массив статистики по дням для этого объявления
-                                    item_stats = item_stat.get("stats", [])
-                                    for day_stat in item_stats:
-                                        # Суммируем статистику по каждому дню
-                                        total_views += day_stat.get("uniqViews", 0)
-                                        total_contacts += day_stat.get("uniqContacts", 0)
-                                        total_favorites += day_stat.get("uniqFavorites", 0)
-                            else:
-                                # Выводим подробную информацию об ошибке
-                                logger.error(f"Ошибка при получении статистики объявлений (группа {i//200+1}): {stats_response.status_code} {stats_response.text}")
-                                
-                                # Если получили 404, пробуем с ID пользователя
-                                if stats_response.status_code == 404:
-                                    logger.info("Пробуем альтернативный URL с ID пользователя")
-                                    profile_data = self.get_user_profile()
-                                    if "error" not in profile_data and "id" in profile_data:
-                                        user_id = profile_data.get("id")
-                                        alt_stats_url = f"{self.api_url}/stats/v1/accounts/{user_id}/items"
-                                        logger.info(f"Повторный запрос с URL: {alt_stats_url}")
+                            if stats_response.status_code == 404:
+                                logger.info("Пробуем альтернативный URL с ID пользователя")
+                                profile_data = self.get_user_profile()
+                                if "error" not in profile_data and "id" in profile_data:
+                                    user_id = profile_data.get("id")
+                                    alt_stats_url = f"{self.api_url}/stats/v1/accounts/{user_id}/items"
+                                    logger.info(f"Повторный запрос с URL: {alt_stats_url}")
                                         
-                                        alt_stats_response = requests.post(alt_stats_url, headers=stats_headers, json=stats_payload)
+                                    alt_stats_response = requests.post(alt_stats_url, headers=stats_headers, json=stats_payload)
                                         
-                                        if alt_stats_response.status_code == 200:
-                                            alt_stats_data = alt_stats_response.json()
-                                            logger.info(f"Успешный ответ от альтернативного URL: {alt_stats_data}")
+                                    if alt_stats_response.status_code == 200:
+                                        alt_stats_data = alt_stats_response.json()
+                                        logger.info(f"Успешный ответ от альтернативного URL: {alt_stats_data}")
                                             
-                                            # Обрабатываем данные так же, как и в основном запросе
-                                            alt_stats_items = alt_stats_data.get("result", {}).get("items", [])
+                                        # Обрабатываем данные так же, как и в основном запросе
+                                        alt_stats_items = alt_stats_data.get("result", {}).get("items", [])
                                             
-                                            for item_stat in alt_stats_items:
-                                                item_stats = item_stat.get("stats", [])
-                                                for day_stat in item_stats:
-                                                    total_views += day_stat.get("uniqViews", 0)
-                                                    total_contacts += day_stat.get("uniqContacts", 0)
-                                                    total_favorites += day_stat.get("uniqFavorites", 0)
-                                        else:
-                                            logger.error(f"Альтернативный URL также вернул ошибку: {alt_stats_response.status_code} {alt_stats_response.text}")
+                                        for item_stat in alt_stats_items:
+                                            item_stats = item_stat.get("stats", [])
+                                            for day_stat in item_stats:
+                                                total_views += day_stat.get("uniqViews", 0)
+                                                total_contacts += day_stat.get("uniqContacts", 0)
+                                                total_favorites += day_stat.get("uniqFavorites", 0)
+                                    else:
+                                        logger.error(f"Альтернативный URL также вернул ошибку: {alt_stats_response.status_code} {alt_stats_response.text}")
+                                
                         except Exception as e:
                             logger.error(f"Исключение при получении статистики объявлений: {e}")
                     
@@ -292,15 +346,11 @@ class AvitoApiService:
                     current_stats["contacts"] = total_contacts
                     current_stats["favorites"] = total_favorites
                     
-                    # Определяем значения для предыдущего периода для расчета процентов
-                    # Для этого сделаем запрос за предыдущие 30 дней
-                    sixty_days_ago = today - datetime.timedelta(days=60)
-                    thirty_one_days_ago = today - datetime.timedelta(days=31)
-                    
+                    # Определяем значения для предыдущего периода (позавчера) для расчета процентов
                     prev_total_views = 0
                     prev_total_contacts = 0
                     
-                    # Обрабатываем ID по группам не более 200 штук для предыдущего периода
+                    # Обрабатываем ID для предыдущего дня
                     for i in range(0, len(item_ids), 200):
                         chunk_ids = item_ids[i:i+200]
                         
@@ -309,8 +359,8 @@ class AvitoApiService:
                             prev_stats_url = f"{self.api_url}/stats/v1/accounts/self/items"
                             
                             prev_stats_payload = {
-                                "dateFrom": sixty_days_ago.strftime("%Y-%m-%d"),
-                                "dateTo": thirty_one_days_ago.strftime("%Y-%m-%d"),
+                                "dateFrom": day_before_yesterday.strftime("%Y-%m-%d"),
+                                "dateTo": yesterday.strftime("%Y-%m-%d"),
                                 "fields": ["uniqViews", "uniqContacts"],
                                 "itemIds": chunk_ids,
                                 "periodGrouping": "day"
@@ -359,15 +409,16 @@ class AvitoApiService:
                 # Если не удалось получить список объявлений, продолжаем с тем, что есть
                 pass
             
-            # Получаем статистику звонков по времени создания
+            # Получаем статистику звонков за текущий день
             calls_url = f"{self.api_url}/cpa/v2/callsByTime"
             # Текущая дата
             today = datetime.datetime.now()
-            thirty_days_ago = today - datetime.timedelta(days=30)
+            yesterday = today - datetime.timedelta(days=1)
             
-            # Параметры для запроса звонков за последние 30 дней в формате RFC3339
+            # Параметры для запроса звонков за вчерашний день в формате RFC3339
             calls_payload = {
-                "dateTimeFrom": thirty_days_ago.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "dateTimeFrom": yesterday.strftime("%Y-%m-%dT00:00:00Z"),
+                "dateTimeTo": today.strftime("%Y-%m-%dT00:00:00Z"),
                 "limit": 1000,  # Увеличиваем лимит для получения всех звонков за период
                 "offset": 0
             }
@@ -394,12 +445,13 @@ class AvitoApiService:
                 elif "contacts" in current_stats and calls_count > 0:
                     current_stats["contacts"] += calls_count
             
-            # Получаем чаты за текущий период
+            # Получаем чаты за текущий день
             chats_url = f"{self.api_url}/cpa/v2/chatsByTime"
             
             # Используем те же временные рамки, что и для звонков
             chats_payload = {
-                "dateTimeFrom": thirty_days_ago.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "dateTimeFrom": yesterday.strftime("%Y-%m-%dT00:00:00Z"),
+                "dateTimeTo": today.strftime("%Y-%m-%dT00:00:00Z"),
                 "limit": 1000,  # Увеличиваем лимит для получения всех чатов за период
                 "offset": 0
             }
@@ -433,7 +485,6 @@ class AvitoApiService:
                 elif "contacts" in current_stats and chats_count > 0:
                     current_stats["contacts"] += chats_count
             
-            # Получаем данные о пропущенных звонках
             # Считаем пропущенные звонки из полученных данных
             missed_calls = 0
             if "calls" in calls_data:
@@ -474,151 +525,14 @@ class AvitoApiService:
             current_stats["service_level"] = service_level
             current_stats["new_reviews"] = 0  # Нет API для получения отзывов
             
-            # Получаем данные о расходах
-            # Расходы на продвижение объявлений
-            promotion_expenses_url = f"{self.api_url}/cpa/v1/expenses/promotion"
-            
-            # Получаем данные за последние 30 дней
-            today = datetime.datetime.now()
-            thirty_days_ago = today - datetime.timedelta(days=30)
-            
-            promotion_payload = {
-                "dateFrom": thirty_days_ago.strftime("%Y-%m-%d"),
-                "dateTo": today.strftime("%Y-%m-%d")
-            }
-            
-            # Выполняем запрос для получения расходов на продвижение
-            promotion_response = requests.get(promotion_expenses_url, headers=headers, params=promotion_payload)
-            
-            # Инициализируем переменные для расходов
-            total_expenses = 0
-            promotion_expenses = 0
-            xl_expenses = 0
-            discounts_expenses = 0
-            
-            # Обрабатываем ответ API о расходах на продвижение
-            if promotion_response.status_code == 200:
-                promotion_data = promotion_response.json()
-                logger.info(f"Получены данные о расходах на продвижение: {promotion_data}")
-                
-                # Извлекаем общую сумму расходов на продвижение
-                promotion_expenses = promotion_data.get("total", 0) / 100  # Переводим копейки в рубли
-                total_expenses += promotion_expenses
-                
-            else:
-                logger.error(f"Ошибка при получении данных о расходах на продвижение: {promotion_response.status_code} {promotion_response.text}")
-            
-            # Получаем расходы на XL и выделение
-            xl_expenses_url = f"{self.api_url}/cpa/v1/expenses/vas"
-            
-            xl_payload = {
-                "dateFrom": thirty_days_ago.strftime("%Y-%m-%d"),
-                "dateTo": today.strftime("%Y-%m-%d")
-            }
-            
-            # Выполняем запрос для получения расходов на XL и выделение
-            xl_response = requests.get(xl_expenses_url, headers=headers, params=xl_payload)
-            
-            # Обрабатываем ответ API о расходах на XL и выделение
-            if xl_response.status_code == 200:
-                xl_data = xl_response.json()
-                logger.info(f"Получены данные о расходах на XL и выделение: {xl_data}")
-                
-                # Извлекаем общую сумму расходов на XL и выделение
-                xl_expenses = xl_data.get("total", 0) / 100  # Переводим копейки в рубли
-                total_expenses += xl_expenses
-                
-            else:
-                logger.error(f"Ошибка при получении данных о расходах на XL и выделение: {xl_response.status_code} {xl_response.text}")
-            
-            # Получаем расходы на рассылку скидок
-            discounts_expenses_url = f"{self.api_url}/cpa/v1/expenses/discounts"
-            
-            discounts_payload = {
-                "dateFrom": thirty_days_ago.strftime("%Y-%m-%d"),
-                "dateTo": today.strftime("%Y-%m-%d")
-            }
-            
-            # Выполняем запрос для получения расходов на рассылку скидок
-            discounts_response = requests.get(discounts_expenses_url, headers=headers, params=discounts_payload)
-            
-            # Обрабатываем ответ API о расходах на рассылку скидок
-            if discounts_response.status_code == 200:
-                discounts_data = discounts_response.json()
-                logger.info(f"Получены данные о расходах на рассылку скидок: {discounts_data}")
-                
-                # Извлекаем общую сумму расходов на рассылку скидок
-                discounts_expenses = discounts_data.get("total", 0) / 100  # Переводим копейки в рубли
-                total_expenses += discounts_expenses
-                
-            else:
-                logger.error(f"Ошибка при получении данных о расходах на рассылку скидок: {discounts_response.status_code} {discounts_response.text}")
-            
-            # Получаем предыдущие расходы для сравнения
-            # Определяем период для предыдущих расходов
-            sixty_days_ago = today - datetime.timedelta(days=60)
-            thirty_one_days_ago = today - datetime.timedelta(days=31)
-            
-            prev_promotion_payload = {
-                "dateFrom": sixty_days_ago.strftime("%Y-%m-%d"),
-                "dateTo": thirty_one_days_ago.strftime("%Y-%m-%d")
-            }
-            
-            # Запрашиваем предыдущие расходы на продвижение
-            prev_promotion_response = requests.get(promotion_expenses_url, headers=headers, params=prev_promotion_payload)
-            prev_promotion_expenses = 0
-            
-            if prev_promotion_response.status_code == 200:
-                prev_promotion_data = prev_promotion_response.json()
-                prev_promotion_expenses = prev_promotion_data.get("total", 0) / 100
-            else:
-                logger.error(f"Ошибка при получении предыдущих данных о расходах на продвижение: {prev_promotion_response.status_code} {prev_promotion_response.text}")
-            
-            # Запрашиваем предыдущие расходы на XL и выделение
-            prev_xl_response = requests.get(xl_expenses_url, headers=headers, params=prev_promotion_payload)
-            prev_xl_expenses = 0
-            
-            if prev_xl_response.status_code == 200:
-                prev_xl_data = prev_xl_response.json()
-                prev_xl_expenses = prev_xl_data.get("total", 0) / 100
-            else:
-                logger.error(f"Ошибка при получении предыдущих данных о расходах на XL и выделение: {prev_xl_response.status_code} {prev_xl_response.text}")
-            
-            # Запрашиваем предыдущие расходы на рассылку скидок
-            prev_discounts_response = requests.get(discounts_expenses_url, headers=headers, params=prev_promotion_payload)
-            prev_discounts_expenses = 0
-            
-            if prev_discounts_response.status_code == 200:
-                prev_discounts_data = prev_discounts_response.json()
-                prev_discounts_expenses = prev_discounts_data.get("total", 0) / 100
-            else:
-                logger.error(f"Ошибка при получении предыдущих данных о расходах на рассылку скидок: {prev_discounts_response.status_code} {prev_discounts_response.text}")
-            
-            # Вычисляем общие предыдущие расходы
-            prev_total_expenses = prev_promotion_expenses + prev_xl_expenses + prev_discounts_expenses
-            
-            # Заполняем статистику текущих расходов
-            current_stats["total_expenses"] = total_expenses
-            current_stats["promotion_expenses"] = promotion_expenses
-            current_stats["xl_expenses"] = xl_expenses
-            current_stats["discounts_expenses"] = discounts_expenses
-            
-            # Заполняем статистику предыдущих расходов
-            previous_stats["total_expenses"] = prev_total_expenses
-            previous_stats["promotion_expenses"] = prev_promotion_expenses
-            previous_stats["xl_expenses"] = prev_xl_expenses
-            previous_stats["discounts_expenses"] = prev_discounts_expenses
-            
-            # Получаем значение баланса в рублях (делим на 100, т.к. значение в копейках)
-            wallet_balance = balance_data.get("balance", 0) / 100 if "balance" in balance_data else 0
-            
             # Собираем все данные в один словарь
             return {
                 "current": current_stats,
                 "previous": previous_stats,
                 "balance": {
                     "cpa": 0,  # В текущем API нет разделения на CPA и кошелек
-                    "wallet": wallet_balance
+                    "wallet": current_wallet_balance,
+                    "previous_wallet": previous_wallet_balance
                 },
                 "managers": {
                     "missed_calls": current_stats.get("missed_calls", 0),
@@ -627,16 +541,60 @@ class AvitoApiService:
                     "new_reviews": current_stats.get("new_reviews", 0)
                 },
                 "expenses": {
-                    "total": current_stats.get("total_expenses", 0),
-                    "promotion": current_stats.get("promotion_expenses", 0),
-                    "xl": current_stats.get("xl_expenses", 0),
-                    "discounts": current_stats.get("discounts_expenses", 0)
+                    "total": daily_expenses
+                },
+                "deposit": {
+                    "total": daily_deposit
                 }
             }
             
         except Exception as e:
             return {"error": f"Ошибка при получении данных о состоянии аккаунта: {str(e)}"}
     
+    def get_previous_wallet_balance(self):
+        """Получение баланса кошелька за предыдущий день"""
+        # Сначала пробуем получить баланс из БД, если есть привязанный пользователь
+        if self.user:
+            yesterday = datetime.date.today() - datetime.timedelta(days=1)
+            prev_balance = UserBalance.objects.filter(user=self.user, date=yesterday).first()
+            if prev_balance:
+                return float(prev_balance.amount)
+        
+        # Если не получилось, используем API (используется как запасной вариант)
+        token = self.get_access_token()
+        if not token:
+            logger.error("Не удалось получить токен доступа для получения баланса за предыдущий день")
+            return 0
+        
+        try:
+            # Получаем информацию о балансе пользователя за вчерашний день
+            balance_url = f"{self.api_url}/cpa/v3/balanceInfo"
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "X-Source": "AvitoTelegramBot",
+                "Content-Type": "application/json"
+            }
+            
+            # Согласно документации, нужно передать пустой объект в теле запроса
+            balance_payload = "{}"
+            
+            response = requests.post(balance_url, headers=headers, data=balance_payload)
+            
+            if response.status_code != 200:
+                logger.error(f"Ошибка при получении баланса за предыдущий день: {response.text}")
+                return 0
+            
+            balance_data = response.json()
+            logger.info(f"Получен ответ о балансе за предыдущий день: {balance_data}")
+            
+            # Получаем значение баланса в рублях (делим на 100, т.к. значение в копейках)
+            previous_wallet_balance = balance_data.get("balance", 0) / 100 if "balance" in balance_data else 0
+            return previous_wallet_balance
+        except Exception as e:
+            logger.error(f"Ошибка при получении баланса за предыдущий день: {str(e)}")
+            return 0
+        
+
     def format_account_stats(self, stats_data):
         """Форматирование данных о состоянии аккаунта в читаемый вид"""
         # Если есть ошибка, вернем сообщение об ошибке
@@ -650,121 +608,147 @@ class AvitoApiService:
         report = f"📊 Отчет за {today}\n\n"
         
         # Показатели
-        report += "📈 Показатели\n"
+        current_stats = stats_data.get("current", {}) or {}
+        previous_stats = stats_data.get("previous", {}) or {}
         
-        # Если есть данные о статистике объявлений
-        if "current" in stats_data and "previous" in stats_data:
-            current_stats = stats_data["current"]
-            previous_stats = stats_data["previous"]
+        # Проверяем, есть ли какие-то полезные данные для отображения
+        has_stats_data = any([
+            current_stats.get("ads_count", 0) > 0,
+            current_stats.get("views", 0) > 0,
+            current_stats.get("contacts", 0) > 0,
+            current_stats.get("calls", 0) > 0
+        ])
+        
+        if has_stats_data:
+            report += "📈 Показатели\n"
             
             # Объявления
-            ads_count = current_stats.get("ads_count", 0)
-            prev_ads_count = previous_stats.get("ads_count", 0)
+            ads_count = current_stats.get("ads_count", 0) or 0
+            prev_ads_count = previous_stats.get("ads_count", 0) or 0
             ads_percent = self._calculate_percent_change(ads_count, prev_ads_count)
             report += f"✔️Объявления: {ads_count} шт ({ads_percent}%)\n"
             
             # Просмотры
-            views = current_stats.get("views", 0)
-            prev_views = previous_stats.get("views", 0)
+            views = current_stats.get("views", 0) or 0
+            prev_views = previous_stats.get("views", 0) or 0
             views_percent = self._calculate_percent_change(views, prev_views)
             report += f"✔️Просмотры: {views} ({views_percent}%)\n"
             
             # Контакты
-            contacts = current_stats.get("contacts", 0)
-            prev_contacts = previous_stats.get("contacts", 0)
+            contacts = current_stats.get("contacts", 0) or 0
+            prev_contacts = previous_stats.get("contacts", 0) or 0
             contacts_percent = self._calculate_percent_change(contacts, prev_contacts)
             report += f"✔️Контакты: {contacts} ({contacts_percent}%)\n"
             
             # Конверсия в контакты
-            conversion = (contacts / views * 100) if views > 0 else 0
-            prev_conversion = (prev_contacts / prev_views * 100) if prev_views > 0 else 0
+            conversion = (contacts / views * 100) if views and views > 0 else 0
+            prev_conversion = (prev_contacts / prev_views * 100) if prev_views and prev_views > 0 else 0
             conversion_percent = self._calculate_percent_change(conversion, prev_conversion)
             report += f"✔️Конверсия в контакты: {conversion:.1f}% ({conversion_percent}%)\n"
             
             # Стоимость контакта
-            expenses = stats_data.get("expenses", {})
-            total_expenses = expenses.get("total", 0)
-            cost_per_contact = total_expenses / contacts if contacts > 0 else 0
-            prev_total_expenses = previous_stats.get("total_expenses", 0)
-            prev_cost_per_contact = prev_total_expenses / prev_contacts if prev_contacts > 0 else 0
+            expenses = stats_data.get("expenses", {}) or {}
+            total_expenses = expenses.get("total", 0) or 0
+            # Проверяем наличие контактов перед делением
+            if contacts and contacts > 0 and total_expenses > 0:
+                cost_per_contact = total_expenses / contacts
+            else:
+                cost_per_contact = 0
+                
+            # Проверяем предыдущие значения
+            prev_total_expenses = previous_stats.get("total_expenses", 0) or 0
+            if prev_contacts and prev_contacts > 0 and prev_total_expenses > 0:
+                prev_cost_per_contact = prev_total_expenses / prev_contacts
+            else:
+                prev_cost_per_contact = 0
+                
             cost_percent = self._calculate_percent_change(cost_per_contact, prev_cost_per_contact)
             report += f"✔️Стоимость контакта: {cost_per_contact:.0f} ₽ ({cost_percent}%)\n"
             
             # Звонки
-            calls = current_stats.get("calls", 0)
-            prev_calls = previous_stats.get("calls", 0)
+            calls = current_stats.get("calls", 0) or 0
+            prev_calls = previous_stats.get("calls", 0) or 0
             calls_percent = self._calculate_percent_change(calls, prev_calls)
             report += f"❗️Всего звонков: {calls} ({calls_percent}%)\n"
+        else:
+            report += "📈 Показатели: нет данных\n"
         
-        # Расходы
-        expenses = stats_data.get("expenses", {})
-        if expenses:
-            report += "\n💰 Расходы\n"
+        # Расходы и пополнения
+        expenses = stats_data.get("expenses", {}) or {}
+        deposit = stats_data.get("deposit", {}) or {}
+        
+        # Добавляем заголовок "Финансы" только если действительно есть что отображать
+        total_expenses = expenses.get("total", 0) or 0
+        total_deposit = deposit.get("total", 0) or 0
+        
+        if total_expenses > 0 or total_deposit > 0:
+            report += "\n💰 Финансы\n"
             
-            # Общие расходы
-            total = expenses.get("total", 0)
-            prev_total = previous_stats.get("total_expenses", 0)
-            total_percent = self._calculate_percent_change(total, prev_total)
-            report += f"Общие: {total} ₽ ({total_percent}%)\n"
+            # Проверяем, были ли расходы
+            if total_expenses > 0:
+                prev_total_expenses = previous_stats.get("total_expenses", 0) or 0
+                total_percent = self._calculate_percent_change(total_expenses, prev_total_expenses)
+                report += f"📉 Расходы: {total_expenses:.0f} ₽ ({total_percent}%)\n"
             
-            # Расходы на продвижение
-            promotion = expenses.get("promotion", 0)
-            prev_promotion = previous_stats.get("promotion_expenses", 0)
-            promotion_percent = self._calculate_percent_change(promotion, prev_promotion)
-            report += f"На продвижение: {promotion} ₽ ({promotion_percent}%)\n"
-            
-            # Расходы на XL и выделение
-            xl = expenses.get("xl", 0)
-            prev_xl = previous_stats.get("xl_expenses", 0)
-            xl_percent = self._calculate_percent_change(xl, prev_xl)
-            report += f"На XL и выделение: {xl} ₽ ({xl_percent}%)\n"
-            
-            # Рассылка скидок
-            discounts = expenses.get("discounts", 0)
-            prev_discounts = previous_stats.get("discounts_expenses", 0)
-            discounts_percent = self._calculate_percent_change(discounts, prev_discounts)
-            report += f"Рассылка скидок: {discounts} ₽ ({discounts_percent}%)\n"
+            # Проверяем, были ли пополнения
+            if total_deposit > 0:
+                prev_total_deposit = previous_stats.get("total_deposit", 0) or 0
+                deposit_percent = self._calculate_percent_change(total_deposit, prev_total_deposit)
+                report += f"📈 Пополнения: {total_deposit:.0f} ₽ ({deposit_percent}%)\n"
         
         # Работа менеджеров
-        managers = stats_data.get("managers", {})
-        if managers:
+        managers = stats_data.get("managers", {}) or {}
+        
+        # Проверяем, есть ли данные по работе менеджеров
+        missed_calls = managers.get("missed_calls", 0) or 0
+        unanswered_messages = managers.get("unanswered_messages", 0) or 0
+        service_level = managers.get("service_level", 0) or 0
+        new_reviews = managers.get("new_reviews", 0) or 0
+        
+        has_manager_data = missed_calls > 0 or unanswered_messages > 0 or service_level > 0 or new_reviews > 0
+        
+        if has_manager_data:
             report += "\n👥 Работа менеджеров\n"
-            
-            # Непринятые звонки
-            missed_calls = managers.get("missed_calls", 0)
             report += f"Непринятые звонки: {missed_calls}\n"
-            
-            # Сообщения без ответа
-            unanswered_messages = managers.get("unanswered_messages", 0)
             report += f"Сообщения без ответа: {unanswered_messages}\n"
-            
-            # Уровень сервиса
-            service_level = managers.get("service_level", 0)
             report += f"Уровень сервиса: {service_level}%\n"
-            
-            # Новые отзывы
-            new_reviews = managers.get("new_reviews", 0)
             report += f"Новые отзывы: {new_reviews}\n"
         
         # Баланс
-        balance = stats_data.get("balance", {})
-        if balance:
+        balance = stats_data.get("balance", {}) or {}
+        wallet = balance.get("wallet", 0) or 0
+        prev_wallet = balance.get("previous_wallet", 0) or 0
+        
+        if wallet > 0 or prev_wallet > 0:
             report += "\n—————————\n"
             
             # CPA баланс
-            cpa_balance = balance.get("cpa", 0)
-            report += f"CPA баланс: {cpa_balance} ₽\n"
+            cpa_balance = balance.get("cpa", 0) or 0
+            if cpa_balance > 0:
+                report += f"CPA баланс: {cpa_balance} ₽\n"
             
-            # Кошелек
-            wallet = balance.get("wallet", 0)
-            report += f"Кошелек: {wallet} ₽"
+            # Текущий баланс
+            report += f"Текущий баланс: {wallet:.0f} ₽\n"
+            
+            # Баланс вчера
+            report += f"Баланс вчера: {prev_wallet:.0f} ₽"
         
         return report
     
     def _calculate_percent_change(self, current, previous):
         """Расчет процентного изменения между текущим и предыдущим значением"""
-        if previous == 0:
+        # Проверка на None и конвертация в числовой тип
+        current = float(current or 0)
+        previous = float(previous or 0)
+        
+        # Если оба значения равны нулю, изменения нет
+        if current == 0 and previous == 0:
             return 0.0
+            
+        # Если предыдущее значение равно нулю, а текущее нет,
+        # считаем рост как 100% (или другое значение по выбору)
+        if previous == 0:
+            return 100.0 if current > 0 else 0.0
         
         change = ((current - previous) / previous) * 100
         return round(change, 1) 
