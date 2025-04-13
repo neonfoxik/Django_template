@@ -153,7 +153,6 @@ def get_item_info(user_id, item_id):
     result = json.loads(response.text)
     print(f"Информация по объявлению {item_id}: {json.dumps(result, indent=2, ensure_ascii=False)}")
     return result
-
 # Получение информации по объявлениям пользователя и статистики по ним
 def get_user_items_stats(user_id, status="active", per_page=25, page=1, date_from=None, date_to=None, period_grouping="day"):
     items_url = 'https://api.avito.ru/core/v1/items'
@@ -173,6 +172,25 @@ def get_user_items_stats(user_id, status="active", per_page=25, page=1, date_fro
     # Правильное извлечение идентификаторов объявлений из структуры ответа API
     item_ids = [item['id'] for item in result.get('resources', [])]
     
+    # Подсчет объявлений с XL продвижением
+    xl_promotion_count = 0
+    
+    # Получаем детальную информацию о каждом объявлении для проверки XL продвижения
+    for item_id in item_ids:
+        item_info_url = f'https://api.avito.ru/core/v1/accounts/{user_id}/items/{item_id}/'
+        item_info_headers = {
+            'Authorization': f'Bearer {access_token}'
+        }
+        
+        try:
+            item_response = requests.get(item_info_url, headers=item_info_headers)
+            item_data = json.loads(item_response.text)
+        except Exception as e:
+            print(f"Ошибка при получении информации о продвижении для объявления {item_id}: {str(e)}")
+    
+    print(f"Всего объявлений: {len(item_ids)}")
+
+
 
     if item_ids:
         # Получение статистики по объявлениям
