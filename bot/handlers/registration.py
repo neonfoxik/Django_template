@@ -1,7 +1,7 @@
 from bot.models import User
 from bot import bot
 from django.conf import settings
-from bot.services import AvitoApiService
+
 
 def start_registration(message):
     from bot.handlers.common import menu_m
