@@ -47,8 +47,9 @@ def index(request: HttpRequest) -> JsonResponse:
 
 
 """Common"""
-
+admin = bot.message_handler(commands=["admin"])(get_users)
 start = bot.message_handler(commands=["start"])(start)
 
+get_user_info = bot.callback_query_handler(lambda c: c.data.startswith("admin_"))(get_user_info)
 daily_report = bot.callback_query_handler(lambda c: c.data == "daily_report")(daily_report)
 weekly_report = bot.callback_query_handler(lambda c: c.data == "weekly_report")(weekly_report)
