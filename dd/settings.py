@@ -24,12 +24,12 @@ LOCAL = os.getenv('LOCAL')
 
 ALLOWED_HOSTS = ["*"]
 
-BOT_TOKEN="7860120084:AAFHqTFjb6gQ0QZ467gLtBfxT7BINip3YQU"
+BOT_TOKEN = os.getenv('BOT_TOKEN')
 OWNER_ID = os.getenv('OWNER_ID')
 CHANNEL_NAME1 = os.getenv('CHANNEL_NAME1')
 CHANNEL_NAME2 = os.getenv('CHANNEL_NAME2')
 BOT_NAME = os.getenv("BOT_NAME")
-HOOK="https://ica3ms-178-207-190-132.ru.tuna.am"
+HOOK = os.getenv('HOOK')
 
 # Application definition
 BOT_COMMANDS = [
