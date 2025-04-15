@@ -1,6 +1,7 @@
 from bot.models import User
 from bot import bot
 from django.conf import settings
+from bot.services import get_access_token, get_avito_user_id
 
 
 def start_registration(message):
@@ -25,11 +26,8 @@ def get_user_client_secret(message, client_id):
     client_secret = message.text.strip()
     user_id = message.from_user.id
     
-    # Проверяем валидность client_secret
-    api_service = AvitoApiService(client_id, client_secret)
-    
     # Пытаемся получить токен доступа
-    token = api_service.get_access_token()
+    token = get_access_token(client_id, client_secret)
     if not token:
         mesg = bot.send_message(
             chat_id=user_id, 
@@ -47,9 +45,9 @@ def get_user_client_secret(message, client_id):
     )
     user.save()
     
-    # Получаем имя пользователя из API, если возможно
-    profile_data = api_service.get_user_profile()
-    user_name = profile_data.get('name', 'пользователь') if isinstance(profile_data, dict) and 'name' in profile_data else 'пользователь'
+    # Пытаемся получить Avito ID пользователя
+    avito_user_id = get_avito_user_id(client_id, client_secret)
+    user_name = message.from_user.first_name
     
     bot.send_message(
         chat_id=user_id, 
