@@ -25,29 +25,23 @@ class User(models.Model):
         blank=True,
         default="none",
     )
-
-
-class ItemData(models.Model):
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name='item_data',
-        verbose_name='Пользователь'
+    day_chats = models.IntegerField(
+        verbose_name='количество чатов за день',
+        default=0
     )
-    item_id = models.CharField(
-        max_length=100,
-        verbose_name='ID предмета'
+    week_chats = models.IntegerField(
+        verbose_name='количество чатов за неделю',
+        default=0
     )
-    view_price = models.FloatField(
-        verbose_name='Цена за просмотр',
-        default=0.0
+    daily_report_tg_id = models.CharField(
+        max_length=50,
+        verbose_name='Telegram ID для дневных отчетов',
+        null=True,
+        blank=True,
     )
-    updated_at = models.DateTimeField(
-        auto_now=True,
-        verbose_name='Дата обновления'
+    weekly_report_tg_id = models.CharField(
+        max_length=50,
+        verbose_name='Telegram ID для недельных отчетов',
+        null=True,
+        blank=True,
     )
-
-    class Meta:
-        unique_together = ('user', 'item_id')
-        verbose_name = 'Данные предмета'
-        verbose_name_plural = 'Данные предметов'

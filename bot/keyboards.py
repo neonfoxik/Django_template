@@ -5,8 +5,6 @@ from telebot.types import (
 
 
 main_markup = InlineKeyboardMarkup()
-btn1 = InlineKeyboardButton("Профиль", callback_data="profile")
 btn2 = InlineKeyboardButton("Отчет за неделю", callback_data="weekly_report")
 btn3 = InlineKeyboardButton("Отчет за день", callback_data="daily_report")
-btn4 = InlineKeyboardButton("Загрузить данные XLS", callback_data="upload_items_data")
-main_markup.add(btn1).add(btn2).add(btn3).add(btn4)
+main_markup.add(btn2).add(btn3)

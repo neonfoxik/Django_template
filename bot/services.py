@@ -1,7 +1,9 @@
 import requests
 import json
 import datetime
+import logging
 
+logger = logging.getLogger(__name__)
 
 def get_access_token(client_id, client_secret):
     auth_url = 'https://api.avito.ru/token'
@@ -52,41 +54,137 @@ def get_missed_calls(access_token, date_from=None, date_to=None):
     missed_calls = sum(1 for call in calls_result.get('calls', []) if call.get('talkDuration', 0) == 0)
     return missed_calls
 
+def get_user_balance_info(access_token, user_id=None):
+    """
+    Получает подробную информацию о балансе пользователя:
+    - balance_real - реальные деньги в кошельке
+    - balance_bonus - бонусные средства
+    - advance - авансовые платежи (бывший 'balance' из API v3)
+    """
+    try:
+        # Если не передан user_id, получаем его из профиля
+        if not user_id:
+            profile_url = 'https://api.avito.ru/core/v1/accounts/self'
+            profile_headers = {
+                'Authorization': f'Bearer {access_token}'
+            }
+            profile_response = requests.get(profile_url, headers=profile_headers)
+            profile_response.raise_for_status()
+            profile_data = profile_response.json()
+            user_id = profile_data.get('id')
+            
+            if not user_id:
+                logger.error("Не удалось получить идентификатор пользователя")
+                return {"balance_real": 0, "balance_bonus": 0, "advance": 0}
+        
+        # Получаем реальный баланс кошелька (метод API v1)
+        balance_url = f'https://api.avito.ru/core/v1/accounts/{user_id}/balance/'
+        balance_headers = {
+            'Authorization': f'Bearer {access_token}'
+        }
+        
+        balance_response = requests.get(balance_url, headers=balance_headers)
+        balance_response.raise_for_status()
+        balance_data = balance_response.json()
+        
+        # Получаем авансы (старый метод API v3)
+        advance_url = 'https://api.avito.ru/cpa/v3/balanceInfo'
+        advance_headers = {
+            'Authorization': f'Bearer {access_token}',
+            'X-Source': 'python_script',
+            'Content-Type': 'application/json'
+        }
+        advance_data = {}
+        
+        advance_response = requests.post(advance_url, headers=advance_headers, json=advance_data)
+        advance_response.raise_for_status()
+        advance_result = advance_response.json()
+        
+        # Получаем данные о авансе из ответа API
+        advance = 0
+        if 'balance' in advance_result:
+            advance = advance_result['balance'] / 100
+        elif 'data' in advance_result and 'balance' in advance_result['data']:
+            advance = advance_result['data']['balance'] / 100
+        
+        # Формируем ответ с полной информацией о балансе
+        return {
+            "balance_real": balance_data.get('real', 0),  # Реальные деньги
+            "balance_bonus": balance_data.get('bonus', 0),  # Бонусы
+            "advance": advance  # Авансовые платежи (старый 'balance')
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при получении информации о балансе: {e}")
+        return {"balance_real": 0, "balance_bonus": 0, "advance": 0}
+
+# Оставляем старую функцию для обратной совместимости, но теперь она возвращает авансы
 def get_user_ballance(access_token):
-    balance_url = 'https://api.avito.ru/cpa/v3/balanceInfo'
-    balance_headers = {
-        'Authorization': f'Bearer {access_token}',
-        'X-Source': 'python_script',
-        'Content-Type': 'application/json'
-    }
-    balance_data = {}
+    """Устаревшая функция, возвращает авансовые платежи для обратной совместимости"""
+    try:
+        balance_info = get_user_balance_info(access_token)
+        return balance_info['advance']
+    except Exception as e:
+        logger.error(f"Ошибка при получении аванса: {e}")
+        return 0
 
-    balance_response = requests.post(balance_url, headers=balance_headers, json=balance_data)
-    balance_result = json.loads(balance_response.text)
-    return balance_result.get('balance', 0) / 100
-
-def get_user_chats(access_token, date_from=None, date_to=None):
-    # Получение списка чатов за указанный период
-    if date_from is None:
-        current_time = datetime.datetime.now()
-        date_from = (current_time - datetime.timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    
-    chats_url = 'https://api.avito.ru/cpa/v2/chatsByTime'
-    chats_data = {
-        'dateTimeFrom': date_from,
-        'limit': 100,
-        'offset': 0
-    }
-    chats_headers = {
-        'Authorization': f'Bearer {access_token}',
-        'X-Source': 'python_script',
-        'Content-Type': 'application/json'
-    }
-
-    chats_response = requests.post(chats_url, headers=chats_headers, json=chats_data)
-    chats_result = json.loads(chats_response.text)
-    total_chats = len(chats_result.get('chats', []))
-    return total_chats
+def get_user_chats(access_token, date_from=None, date_to=None, unread_only=False, chat_types=None, limit=100, offset=0):
+    """Получение списка чатов пользователя за определенный период"""
+    # Получаем user_id из профиля пользователя
+    try:
+        profile_url = 'https://api.avito.ru/core/v1/accounts/self'
+        profile_headers = {
+            'Authorization': f'Bearer {access_token}'
+        }
+        profile_response = requests.get(profile_url, headers=profile_headers)
+        profile_response.raise_for_status()
+        profile_data = profile_response.json()
+        user_id = profile_data.get('id')
+        
+        if not user_id:
+            logger.error("Не удалось получить идентификатор пользователя")
+            return 0
+            
+        # Формируем URL для получения чатов
+        chats_url = f'https://api.avito.ru/messenger/v2/accounts/{user_id}/chats'
+        
+        # Параметры запроса
+        params = {
+            'limit': limit,
+            'offset': offset
+        }
+        
+        # Добавляем параметры периода, если они указаны
+        if date_from:
+            params['date_from'] = date_from
+            
+        if date_to:
+            params['date_to'] = date_to
+        
+        # Добавляем необязательные параметры, если они указаны
+        if unread_only:
+            params['unread_only'] = 'true'
+            
+        if chat_types:
+            params['chat_types'] = ','.join(chat_types)
+        else:
+            params['chat_types'] = 'u2i'  # По умолчанию только чаты по объявлениям
+        
+        # Заголовки запроса
+        headers = {
+            'Authorization': f'Bearer {access_token}'
+        }
+        
+        # Выполняем запрос
+        chats_response = requests.get(chats_url, headers=headers, params=params)
+        chats_response.raise_for_status()
+        chats_result = chats_response.json()
+        # Возвращаем количество чатов
+        total_chats = len(chats_result.get('chats', []))
+        return total_chats
+        
+    except Exception as e:
+        logger.error(f"Ошибка при получении списка чатов: {e}")
+        return 0
 
 def get_all_numbers(access_token, date_from=None, date_to=None):
     if date_from is None:
@@ -295,105 +393,409 @@ def get_avito_user_id(client_id, client_secret):
 
 
 def get_daily_statistics(client_id, client_secret):
-    # Получаем текущую дату
-    current_time = datetime.datetime.now()
-    today_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
-    today_end = current_time.strftime("%Y-%m-%dT%H:%M:%SZ")
-    
-    # Получаем токен доступа (предполагается, что client_id и client_secret доступны)
-    access_token = get_access_token(client_id, client_secret)
-    user_id = get_avito_user_id(client_id, client_secret)
-    
-    # Получаем статистику за сегодня
-    total_calls = get_total_calls(access_token, today_start, today_end)
-    missed_calls = get_missed_calls(access_token, today_start, today_end)
-    balance = get_user_ballance(access_token)
-    total_chats = get_user_chats(access_token, today_start, today_end)
-    total_phones = get_all_numbers(access_token, today_start, today_end)
-    rating = get_user_rating_info(access_token)
-    reviews_info = get_user_reviews(access_token, today_start, today_end)
-    
-    # Получаем информацию о объявлениях
-    item_ids = get_user_items_stats(access_token, user_id, date_from=today_start, date_to=today_end)
-    promotion_info = get_item_promotion_info(access_token, user_id, item_ids)
-    items_stats = get_items_statistics(access_token, user_id, item_ids, date_from=today_start, date_to=today_end)
-    
-    # Формируем и возвращаем полную статистику за день
-    return {
-        "date": current_time.strftime("%Y-%m-%d"),
-        "calls": {
-            "total": total_calls,
-            "missed": missed_calls,
-            "answered": total_calls - missed_calls
-        },
-        "balance": balance,
-        "chats": total_chats,
-        "phones_received": total_phones,
-        "rating": rating,
-        "reviews": {
-            "total": reviews_info["total_reviews"],
-            "today": reviews_info["period_reviews"]
-        },
-        "items": {
-            "total": promotion_info["total_items"],
-            "with_xl_promotion": promotion_info["xl_promotion_count"]
-        },
-        "statistics": {
-            "views": items_stats["total_views"],
-            "contacts": items_stats["total_contacts"],
-            "favorites": items_stats["total_favorites"]
+    try:
+        # Получаем текущую дату
+        current_time = datetime.datetime.now()
+        today_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+        today_end = current_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        
+        logger.info(f"Запрос дневной статистики с {today_start} по {today_end}")
+        
+        # Получаем токен доступа
+        access_token = get_access_token(client_id, client_secret)
+        if not access_token:
+            logger.error("Не удалось получить токен доступа")
+            raise Exception("Не удалось получить токен доступа")
+            
+        user_id = get_avito_user_id(client_id, client_secret)
+        if not user_id:
+            logger.error("Не удалось получить ID пользователя")
+            raise Exception("Не удалось получить ID пользователя")
+        
+        # Инициализируем значения по умолчанию
+        total_calls = 0
+        missed_calls = 0
+        balance_info = {"balance_real": 0, "balance_bonus": 0, "advance": 0}
+        expenses_info = {"total": 0, "details": {}}
+        total_chats = 0
+        total_phones = 0
+        rating = 0
+        reviews_info = {"total_reviews": 0, "period_reviews": 0}
+        promotion_info = {"total_items": 0, "xl_promotion_count": 0}
+        items_stats = {"total_views": 0, "total_contacts": 0, "total_favorites": 0}
+        
+        try:
+            # Получаем статистику звонков
+            total_calls = get_total_calls(access_token, today_start, today_end)
+            missed_calls = get_missed_calls(access_token, today_start, today_end)
+        except Exception as e:
+            logger.error(f"Ошибка при получении статистики звонков: {e}")
+        
+        try:
+            # Получаем полную информацию о балансе
+            balance_info = get_user_balance_info(access_token, user_id)
+        except Exception as e:
+            logger.error(f"Ошибка при получении информации о балансе: {e}")
+        
+        try:
+            # Получаем информацию о расходах
+            expenses_info = get_daily_expenses(access_token)
+        except Exception as e:
+            logger.error(f"Ошибка при получении информации о расходах: {e}")
+        
+        try:
+            # Получаем чаты и показы телефона
+            total_chats = get_user_chats(access_token, today_start, today_end)
+            total_phones = get_all_numbers(access_token, today_start, today_end)
+        except Exception as e:
+            logger.error(f"Ошибка при получении информации о чатах и телефонах: {e}")
+        
+        try:
+            # Получаем рейтинг и отзывы
+            rating = get_user_rating_info(access_token)
+            reviews_info = get_user_reviews(access_token, today_start, today_end)
+        except Exception as e:
+            logger.error(f"Ошибка при получении информации о рейтинге и отзывах: {e}")
+        
+        try:
+            # Получаем информацию о объявлениях
+            item_ids = get_user_items_stats(access_token, user_id, date_from=today_start, date_to=today_end)
+            promotion_info = get_item_promotion_info(access_token, user_id, item_ids)
+            items_stats = get_items_statistics(access_token, user_id, item_ids, date_from=today_start, date_to=today_end)
+        except Exception as e:
+            logger.error(f"Ошибка при получении информации об объявлениях: {e}")
+        
+        # Формируем и возвращаем полную статистику за день
+        result = {
+            "date": current_time.strftime("%Y-%m-%d"),
+            "calls": {
+                "total": total_calls,
+                "missed": missed_calls,
+                "answered": total_calls - missed_calls
+            },
+            "balance_real": balance_info["balance_real"],
+            "balance_bonus": balance_info["balance_bonus"],
+            "advance": balance_info["advance"],
+            "expenses": expenses_info,
+            "chats": total_chats,
+            "phones_received": total_phones,
+            "rating": rating,
+            "reviews": {
+                "total": reviews_info["total_reviews"],
+                "today": reviews_info["period_reviews"]
+            },
+            "items": {
+                "total": promotion_info["total_items"],
+                "with_xl_promotion": promotion_info["xl_promotion_count"]
+            },
+            "statistics": {
+                "views": items_stats["total_views"],
+                "contacts": items_stats["total_contacts"],
+                "favorites": items_stats["total_favorites"]
+            }
         }
-    }
+        
+        logger.info(f"Дневная статистика успешно получена")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Ошибка при получении дневной статистики: {e}")
+        # Возвращаем структуру с нулевыми значениями в случае ошибки
+        return {
+            "date": current_time.strftime("%Y-%m-%d"),
+            "calls": {"total": 0, "missed": 0, "answered": 0},
+            "balance_real": 0,
+            "balance_bonus": 0,
+            "advance": 0,
+            "expenses": {"total": 0, "details": {}},
+            "chats": 0,
+            "phones_received": 0,
+            "rating": 0,
+            "reviews": {"total": 0, "today": 0},
+            "items": {"total": 0, "with_xl_promotion": 0},
+            "statistics": {"views": 0, "contacts": 0, "favorites": 0}
+        }
 
 
 def get_weekly_statistics(client_id, client_secret):
-    # Получаем текущую дату и дату неделю назад
-    current_time = datetime.datetime.now()
-    week_ago = current_time - datetime.timedelta(days=7)
-    week_start = week_ago.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
-    week_end = current_time.strftime("%Y-%m-%dT%H:%M:%SZ")
-    
-    # Получаем токен доступа (предполагается, что client_id и client_secret доступны)
-    access_token = get_access_token(client_id, client_secret)
-    user_id = get_avito_user_id(client_id, client_secret)
-    
-    # Получаем статистику за неделю
-    total_calls = get_total_calls(access_token, week_start, week_end)
-    missed_calls = get_missed_calls(access_token, week_start, week_end)
-    balance = get_user_ballance(access_token)
-    total_chats = get_user_chats(access_token, week_start, week_end)
-    total_phones = get_all_numbers(access_token, week_start, week_end)
-    rating = get_user_rating_info(access_token)
-    reviews_info = get_user_reviews(access_token, week_start, week_end)
-    
-    # Получаем информацию о объявлениях
-    item_ids = get_user_items_stats(access_token, user_id, date_from=week_start, date_to=week_end)
-    promotion_info = get_item_promotion_info(access_token, user_id, item_ids)
-    items_stats = get_items_statistics(access_token, user_id, item_ids, date_from=week_start, date_to=week_end)
-    
-    # Формируем и возвращаем полную статистику за неделю
-    return {
-        "period": f"{week_ago.strftime('%Y-%m-%d')} - {current_time.strftime('%Y-%m-%d')}",
-        "calls": {
-            "total": total_calls,
-            "missed": missed_calls,
-            "answered": total_calls - missed_calls
-        },
-        "balance": balance,
-        "chats": total_chats,
-        "phones_received": total_phones,
-        "rating": rating,
-        "reviews": {
-            "total": reviews_info["total_reviews"],
-            "weekly": reviews_info["period_reviews"]
-        },
-        "items": {
-            "total": promotion_info["total_items"],
-            "with_xl_promotion": promotion_info["xl_promotion_count"]
-        },
-        "statistics": {
-            "views": items_stats["total_views"],
-            "contacts": items_stats["total_contacts"],
-            "favorites": items_stats["total_favorites"]
+    try:
+        # Получаем текущую дату и дату неделю назад
+        current_time = datetime.datetime.now()
+        week_ago = current_time - datetime.timedelta(days=7)
+        week_start = week_ago.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+        week_end = current_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        
+        logger.info(f"Запрос недельной статистики с {week_start} по {week_end}")
+        
+        # Получаем токен доступа
+        access_token = get_access_token(client_id, client_secret)
+        if not access_token:
+            logger.error("Не удалось получить токен доступа")
+            raise Exception("Не удалось получить токен доступа")
+            
+        user_id = get_avito_user_id(client_id, client_secret)
+        if not user_id:
+            logger.error("Не удалось получить ID пользователя")
+            raise Exception("Не удалось получить ID пользователя")
+        
+        # Инициализируем значения по умолчанию
+        total_calls = 0
+        missed_calls = 0
+        balance_info = {"balance_real": 0, "balance_bonus": 0, "advance": 0}
+        expenses_info = {"total": 0, "details": {}}
+        total_chats = 0
+        total_phones = 0
+        rating = 0
+        reviews_info = {"total_reviews": 0, "period_reviews": 0}
+        promotion_info = {"total_items": 0, "xl_promotion_count": 0}
+        items_stats = {"total_views": 0, "total_contacts": 0, "total_favorites": 0}
+        
+        try:
+            # Получаем статистику звонков
+            total_calls = get_total_calls(access_token, week_start, week_end)
+            missed_calls = get_missed_calls(access_token, week_start, week_end)
+        except Exception as e:
+            logger.error(f"Ошибка при получении статистики звонков: {e}")
+        
+        try:
+            # Получаем полную информацию о балансе
+            balance_info = get_user_balance_info(access_token, user_id)
+        except Exception as e:
+            logger.error(f"Ошибка при получении информации о балансе: {e}")
+        
+        try:
+            # Получаем информацию о расходах
+            expenses_info = get_weekly_expenses(access_token)
+        except Exception as e:
+            logger.error(f"Ошибка при получении информации о расходах: {e}")
+        
+        try:
+            # Получаем чаты и показы телефона
+            total_chats = get_user_chats(access_token, week_start, week_end)
+            total_phones = get_all_numbers(access_token, week_start, week_end)
+        except Exception as e:
+            logger.error(f"Ошибка при получении информации о чатах и телефонах: {e}")
+        
+        try:
+            # Получаем рейтинг и отзывы
+            rating = get_user_rating_info(access_token)
+            reviews_info = get_user_reviews(access_token, week_start, week_end)
+        except Exception as e:
+            logger.error(f"Ошибка при получении информации о рейтинге и отзывах: {e}")
+        
+        try:
+            # Получаем информацию о объявлениях
+            item_ids = get_user_items_stats(access_token, user_id, date_from=week_start, date_to=week_end)
+            promotion_info = get_item_promotion_info(access_token, user_id, item_ids)
+            items_stats = get_items_statistics(access_token, user_id, item_ids, date_from=week_start, date_to=week_end)
+        except Exception as e:
+            logger.error(f"Ошибка при получении информации об объявлениях: {e}")
+        
+        # Формируем и возвращаем полную статистику за неделю
+        result = {
+            "period": f"{week_ago.strftime('%Y-%m-%d')} - {current_time.strftime('%Y-%m-%d')}",
+            "calls": {
+                "total": total_calls,
+                "missed": missed_calls,
+                "answered": total_calls - missed_calls
+            },
+            "balance_real": balance_info["balance_real"],
+            "balance_bonus": balance_info["balance_bonus"],
+            "advance": balance_info["advance"],
+            "expenses": expenses_info,
+            "chats": total_chats,
+            "phones_received": total_phones,
+            "rating": rating,
+            "reviews": {
+                "total": reviews_info["total_reviews"],
+                "weekly": reviews_info["period_reviews"]
+            },
+            "items": {
+                "total": promotion_info["total_items"],
+                "with_xl_promotion": promotion_info["xl_promotion_count"]
+            },
+            "statistics": {
+                "views": items_stats["total_views"],
+                "contacts": items_stats["total_contacts"],
+                "favorites": items_stats["total_favorites"]
+            }
         }
-    }
+        
+        logger.info(f"Недельная статистика успешно получена")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Ошибка при получении недельной статистики: {e}")
+        # Возвращаем структуру с нулевыми значениями в случае ошибки
+        return {
+            "period": f"{week_ago.strftime('%Y-%m-%d')} - {current_time.strftime('%Y-%m-%d')}",
+            "calls": {"total": 0, "missed": 0, "answered": 0},
+            "balance_real": 0,
+            "balance_bonus": 0,
+            "advance": 0,
+            "expenses": {"total": 0, "details": {}},
+            "chats": 0,
+            "phones_received": 0,
+            "rating": 0,
+            "reviews": {"total": 0, "weekly": 0},
+            "items": {"total": 0, "with_xl_promotion": 0},
+            "statistics": {"views": 0, "contacts": 0, "favorites": 0}
+        }
+
+def update_user_chats_count(user, access_token=None):
+    """Обновляет счетчики чатов пользователя и возвращает количество новых чатов"""
+    if not access_token:
+        access_token = get_access_token(user.client_id, user.client_secret)
+        if not access_token:
+            logger.error(f"Не удалось получить токен доступа для пользователя {user.telegram_id}")
+            return 0
+    
+    try:
+        # Получаем текущее количество чатов
+        current_chat_count = get_user_chats(access_token)
+        
+        # Если это первый запрос (чаты еще не считались) или поле не инициализировано
+        if not hasattr(user, 'day_chats') or user.day_chats is None:
+            user.day_chats = 0
+            
+        if not hasattr(user, 'week_chats') or user.week_chats is None:
+            user.week_chats = 0
+            
+        # Если счетчики нулевые, просто сохраняем текущее значение
+        if user.day_chats == 0:
+            user.day_chats = current_chat_count
+            user.week_chats = current_chat_count
+            user.save()
+            return 0
+        
+        # Определяем количество новых чатов за день
+        new_day_chats = current_chat_count - user.day_chats
+        if new_day_chats > 0:
+            # Обновляем счетчики
+            user.day_chats = current_chat_count
+            user.week_chats += new_day_chats  # Добавляем новые чаты к недельному счетчику
+            user.save()
+            return new_day_chats
+        
+        return 0
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении счетчиков чатов: {e}")
+        return 0
+
+def get_operations_history(access_token, date_from, date_to):
+    """
+    Получает историю операций пользователя за указанный период
+    и возвращает детализацию расходов.
+    
+    Args:
+        access_token: Токен доступа к API
+        date_from: Начало периода в формате строки ISO (например, '2023-04-01T00:00:00Z')
+        date_to: Конец периода в формате строки ISO (например, '2023-04-08T00:00:00Z')
+        
+    Returns:
+        dict: Словарь с общей суммой расходов и детализацией по типам услуг
+    """
+    try:
+        # URL для получения истории операций
+        operations_url = 'https://api.avito.ru/core/v1/accounts/operations_history/'
+        
+        # Заголовки запроса
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json'
+        }
+        
+        # Данные запроса
+        data = {
+            'dateTimeFrom': date_from,
+            'dateTimeTo': date_to
+        }
+        
+        logger.info(f"Запрос истории операций с {date_from} по {date_to}")
+        
+        # Выполняем запрос
+        response = requests.post(operations_url, headers=headers, json=data)
+        response.raise_for_status()
+        
+        # Проверяем, что ответ не пустой
+        if not response.text.strip():
+            logger.error("Получен пустой ответ от API операций")
+            return {'total': 0, 'details': {}}
+            
+        # Парсим JSON ответ
+        try:
+            result = response.json()
+            logger.info(f"Получен ответ от API операций: {result}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Ошибка декодирования JSON: {e}, содержимое ответа: {response.text}")
+            return {'total': 0, 'details': {}}
+        
+        # Инициализируем счетчики и структуру для детализации расходов
+        total_expenses = 0
+        expenses_details = {}
+        
+        # Обрабатываем все операции
+        for operation in result.get('operations', []):
+            # Если это расход (для простоты считаем расходом любое неотрицательное значение)
+            amount_rub = operation.get('amountRub', 0)
+            if amount_rub > 0:
+                # Добавляем в общую сумму расходов
+                total_expenses += amount_rub
+                
+                # Получаем информацию о типе услуги
+                service_name = operation.get('serviceName', 'Неизвестно')
+                service_type = operation.get('serviceType', 'Неизвестно')
+                operation_type = operation.get('operationType', 'Неизвестно')
+
+                # Формируем ключ для группировки
+                key = f"{service_name} ({service_type})"
+                
+                # Добавляем или обновляем запись в детализации
+                if key in expenses_details:
+                    expenses_details[key]['amount'] += amount_rub
+                    expenses_details[key]['count'] += 1
+                else:
+                    expenses_details[key] = {
+                        'amount': amount_rub,
+                        'count': 1,
+                        'type': operation_type
+                    }
+        
+        # Формируем структуру с результатами
+        result = {
+            'total': total_expenses,
+            'details': expenses_details
+        }
+        logger.info(f"Расходы за период: {result}")
+        print(result)
+        return result
+    except Exception as e:
+        logger.error(f"Ошибка при получении истории операций: {e}")
+        return {
+            'total': 0,
+            'details': {}
+        }
+
+def get_daily_expenses(access_token):
+    """Получает расходы за текущий день"""
+    # Получаем текущую дату и начало дня
+    current_time = datetime.datetime.now()
+    day_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+    current_iso = current_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    logger.info(f"Запрос дневных расходов с {day_start} по {current_iso}")
+    
+    # Получаем расходы
+    return get_operations_history(access_token, day_start, current_iso)
+
+def get_weekly_expenses(access_token):
+    """Получает расходы за текущую неделю"""
+    # Получаем текущую дату и начало недели (7 дней назад)
+    current_time = datetime.datetime.now()
+    week_start = (current_time - datetime.timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+    current_iso = current_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    logger.info(f"Запрос недельных расходов с {week_start} по {current_iso}")
+    
+    # Получаем расходы
+    return get_operations_history(access_token, week_start, current_iso)

@@ -36,21 +36,35 @@ def get_user_client_secret(message, client_id):
         bot.register_next_step_handler(mesg, lambda m: get_user_client_secret(m, client_id))
         return
     
-    # Создаем пользователя с проверенным client_secret
-    user = User.objects.create(
-        telegram_id=user_id,
-        user_name=message.from_user.first_name,
-        client_id=client_id,
-        client_secret=client_secret
-    )
-    user.save()
-    
-    # Пытаемся получить Avito ID пользователя
-    avito_user_id = get_avito_user_id(client_id, client_secret)
-    user_name = message.from_user.first_name
-    
-    bot.send_message(
-        chat_id=user_id, 
-        text=f"✅ Client Secret Авито успешно сохранен!\n\nДобро пожаловать, {user_name}!"
-    )
-    menu_m(message)
+    try:
+        # Пытаемся получить Avito ID пользователя для проверки корректности данных
+        avito_user_id = get_avito_user_id(client_id, client_secret)
+        if not avito_user_id:
+            mesg = bot.send_message(
+                chat_id=user_id, 
+                text="❌ Ошибка: Не удалось получить ID пользователя Авито. Проверьте правильность Client ID и Secret."
+            )
+            bot.register_next_step_handler(mesg, lambda m: get_user_client_secret(m, client_id))
+            return
+        
+        # Создаем пользователя с проверенными учетными данными
+        user = User.objects.create(
+            telegram_id=user_id,
+            user_name=message.from_user.first_name,
+            client_id=client_id,
+            client_secret=client_secret
+        )
+        user.save()
+        
+        user_name = message.from_user.first_name
+        
+        bot.send_message(
+            chat_id=user_id, 
+            text=f"✅ Client Secret Авито успешно сохранен!\n\nДобро пожаловать, {user_name}!"
+        )
+        menu_m(message)
+    except Exception as e:
+        bot.send_message(
+            chat_id=user_id, 
+            text=f"❌ Ошибка при создании пользователя: {str(e)}\nПопробуйте позже."
+        )
