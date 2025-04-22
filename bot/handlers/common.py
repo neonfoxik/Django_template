@@ -65,8 +65,23 @@ def format_expenses_message(expenses):
     
     return message
 
-def send_daily_report(telegram_id):
+def daily_report(call):
+    """Отправка дневного отчета пользователю"""
+    send_daily_report(call.from_user.id, call.message.chat.id)
+
+def weekly_report(call):
+    """Отправка недельного отчета пользователю"""
+    send_weekly_report(call.from_user.id, call.message.chat.id)
+
+def send_daily_report(telegram_id, chat_id=None):
     """Отправка дневного отчета по ID пользователя"""
+    if chat_id is None:
+        chat_id = telegram_id
+    
+    # Сначала отправим сообщение о загрузке
+    if chat_id:
+        bot.send_message(chat_id, "⏳ Получаем данные из API Авито...")
+    
     try:
         user = User.objects.get(telegram_id=telegram_id)
         client_id = user.client_id
@@ -107,17 +122,32 @@ def send_daily_report(telegram_id):
         message_text += expenses_message
 
         # Отправляем отчет на основной ID пользователя и на специальный ID для дневных отчетов, если он указан
-        bot.send_message(telegram_id, message_text, parse_mode="Markdown")
+        if chat_id:
+            bot.send_message(chat_id, message_text, parse_mode="Markdown")
+            
         if user.daily_report_tg_id and user.daily_report_tg_id != telegram_id:
             bot.send_message(user.daily_report_tg_id, message_text, parse_mode="Markdown")
         
     except User.DoesNotExist:
         logger.error(f"Пользователь с ID {telegram_id} не найден")
+        if chat_id:
+            bot.send_message(chat_id, "❌ Ошибка: вы не зарегистрированы. Используйте /start для регистрации.")
     except Exception as e:
         logger.error(f"Ошибка при отправке дневного отчета: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        if chat_id:
+            bot.send_message(chat_id, f"❌ Произошла ошибка: {str(e)}")
 
-def send_weekly_report(telegram_id):
+def send_weekly_report(telegram_id, chat_id=None):
     """Отправка недельного отчета по ID пользователя"""
+    if chat_id is None:
+        chat_id = telegram_id
+    
+    # Сначала отправим сообщение о загрузке
+    if chat_id:
+        bot.send_message(chat_id, "⏳ Получаем данные из API Авито...")
+    
     try:
         user = User.objects.get(telegram_id=telegram_id)
         client_id = user.client_id
@@ -158,11 +188,19 @@ def send_weekly_report(telegram_id):
         message_text += expenses_message
 
         # Отправляем отчет на основной ID пользователя и на специальный ID для недельных отчетов, если он указан
-        bot.send_message(telegram_id, message_text, parse_mode="Markdown")
+        if chat_id:
+            bot.send_message(chat_id, message_text, parse_mode="Markdown")
+            
         if user.weekly_report_tg_id and user.weekly_report_tg_id != telegram_id:
             bot.send_message(user.weekly_report_tg_id, message_text, parse_mode="Markdown")
         
     except User.DoesNotExist:
         logger.error(f"Пользователь с ID {telegram_id} не найден")
+        if chat_id:
+            bot.send_message(chat_id, "❌ Ошибка: вы не зарегистрированы. Используйте /start для регистрации.")
     except Exception as e:
         logger.error(f"Ошибка при отправке недельного отчета: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        if chat_id:
+            bot.send_message(chat_id, f"❌ Произошла ошибка: {str(e)}")
