@@ -354,6 +354,143 @@ def get_user_reviews(access_token, date_from=None, date_to=None, offset=0, limit
 
 
 
+def update_user_chats_count(user, access_token=None):
+    """
+    УСТАРЕВШАЯ ФУНКЦИЯ - Больше не используется
+    Не вызывать, оставлена для обратной совместимости
+    """
+    logger.warning("Вызов устаревшей функции update_user_chats_count")
+    return 0
+
+def get_operations_history(access_token, date_from, date_to):
+    """
+    Получает историю операций пользователя за указанный период
+    и возвращает детализацию расходов.
+    
+    Args:
+        access_token: Токен доступа к API
+        date_from: Начало периода в формате строки ISO (например, '2023-04-01T00:00:00Z')
+        date_to: Конец периода в формате строки ISO (например, '2023-04-08T00:00:00Z')
+        
+    Returns:
+        dict: Словарь с общей суммой расходов и детализацией по типам услуг
+    """
+    try:
+        # URL для получения истории операций
+        operations_url = 'https://api.avito.ru/core/v1/accounts/operations_history/'
+        
+        # Заголовки запроса
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json'
+        }
+        
+        # Данные запроса
+        data = {
+            'dateTimeFrom': date_from,
+            'dateTimeTo': date_to
+        }
+        
+        logger.info(f"Запрос истории операций с {date_from} по {date_to}")
+        
+        # Выполняем запрос
+        response = requests.post(operations_url, headers=headers, json=data)
+        logger.debug(f"Ответ от API операций: {response.text}")
+        response.raise_for_status()
+        
+        # Проверяем, что ответ не пустой
+        if not response.text.strip():
+            logger.error("Получен пустой ответ от API операций")
+            return {'total': 0, 'details': {}}
+            
+        # Парсим JSON ответ
+        try:
+            result = response.json()
+            logger.info(f"Получен ответ от API операций, операций: {len(result.get('operations', []))}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Ошибка декодирования JSON: {e}, содержимое ответа: {response.text}")
+            return {'total': 0, 'details': {}}
+        
+        # Инициализируем счетчики и структуру для детализации расходов
+        total_expenses = 0
+        expenses_details = {}
+        
+        # Обрабатываем все операции
+        for operation in result.get('operations', []):
+            # Получаем сумму операции
+            amount_rub = float(operation.get('amountRub', 0))
+            amount_total = float(operation.get('amountTotal', 0))
+            amount_bonus = float(operation.get('amountBonus', 0))
+            
+            # Получаем информацию о типе услуги
+            operation_type = operation.get('operationType', '')
+            operation_name = operation.get('operationName', '')
+            service_name = operation.get('serviceName', 'Неизвестно')
+            service_type = operation.get('serviceType', '')
+            item_id = operation.get('itemId', 'Неизвестно')
+            
+            # Логируем операцию для отладки
+            logger.debug(f"Операция: {operation_name}, тип: {operation_type}, сумма: {amount_rub}₽")
+            
+            # Считаем только операции списания (расходы)
+            is_expense = False
+            
+            # Признаки расходной операции
+            expense_prefixes = ['списание', 'резервирование', 'плата', 'оплата']
+            for prefix in expense_prefixes:
+                if prefix.lower() in operation_type.lower() or prefix.lower() in operation_name.lower():
+                    is_expense = True
+                    break
+            
+            # Если это не расход или сумма ≤ 0, пропускаем
+            if not is_expense or amount_rub <= 0:
+                continue
+            
+            # Добавляем в общую сумму расходов
+            total_expenses += amount_rub
+            
+            # Формируем ключ для группировки
+            key = f"{service_name}" if service_name != 'Неизвестно' else operation_name
+            if service_type:
+                key += f" ({service_type})"
+            
+            # Добавляем или обновляем запись в детализации
+            if key in expenses_details:
+                expenses_details[key]['amount'] += amount_rub
+                expenses_details[key]['count'] += 1
+                if item_id != 'Неизвестно':
+                    expenses_details[key]['items'].add(str(item_id))
+            else:
+                items_set = {str(item_id)} if item_id != 'Неизвестно' else set()
+                expenses_details[key] = {
+                    'amount': amount_rub,
+                    'count': 1,
+                    'type': operation_type,
+                    'items': items_set
+                }
+        
+        # Преобразуем множества объявлений в списки для сериализации JSON
+        for key in expenses_details:
+            expenses_details[key]['items'] = list(expenses_details[key]['items'])
+            if len(expenses_details[key]['items']) == 1 and expenses_details[key]['items'][0] == 'Неизвестно':
+                expenses_details[key]['items'] = []
+        
+        # Формируем структуру с результатами
+        result = {
+            'total': total_expenses,
+            'details': expenses_details
+        }
+        
+        logger.info(f"Расходы за период: общая сумма {total_expenses:.2f} руб., {len(expenses_details)} категорий")
+        return result
+    except Exception as e:
+        logger.error(f"Ошибка при получении истории операций: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {
+            'total': 0,
+            'details': {}
+        }
 
 
 def get_avito_user_id(client_id, client_secret):
@@ -642,133 +779,6 @@ def get_weekly_statistics(client_id, client_secret):
             "statistics": {"views": 0, "contacts": 0, "favorites": 0}
         }
 
-def update_user_chats_count(user, access_token=None):
-    """
-    УСТАРЕВШАЯ ФУНКЦИЯ - Больше не используется
-    Не вызывать, оставлена для обратной совместимости
-    """
-    logger.warning("Вызов устаревшей функции update_user_chats_count")
-    return 0
-
-def get_operations_history(access_token, date_from, date_to):
-    """
-    Получает историю операций пользователя за указанный период
-    и возвращает детализацию расходов.
-    
-    Args:
-        access_token: Токен доступа к API
-        date_from: Начало периода в формате строки ISO (например, '2023-04-01T00:00:00Z')
-        date_to: Конец периода в формате строки ISO (например, '2023-04-08T00:00:00Z')
-        
-    Returns:
-        dict: Словарь с общей суммой расходов и детализацией по типам услуг
-    """
-    try:
-        # URL для получения истории операций
-        operations_url = 'https://api.avito.ru/core/v1/accounts/operations_history/'
-        
-        # Заголовки запроса
-        headers = {
-            'Authorization': f'Bearer {access_token}',
-            'Content-Type': 'application/json'
-        }
-        
-        # Данные запроса
-        data = {
-            'dateTimeFrom': date_from,
-            'dateTimeTo': date_to
-        }
-        
-        logger.info(f"Запрос истории операций с {date_from} по {date_to}")
-        
-        # Выполняем запрос
-        response = requests.post(operations_url, headers=headers, json=data)
-        print(response.text)
-        response.raise_for_status()
-        
-        # Проверяем, что ответ не пустой
-        if not response.text.strip():
-            logger.error("Получен пустой ответ от API операций")
-            return {'total': 0, 'details': {}}
-            
-        # Парсим JSON ответ
-        try:
-            result = response.json()
-            logger.info(f"Получен ответ от API операций")
-        except json.JSONDecodeError as e:
-            logger.error(f"Ошибка декодирования JSON: {e}, содержимое ответа: {response.text}")
-            return {'total': 0, 'details': {}}
-        
-        # Инициализируем счетчики и структуру для детализации расходов
-        total_expenses = 0
-        expenses_details = {}
-        
-        # Обрабатываем все операции
-        for operation in result.get('operations', []):
-            # Тип операции
-            operation_type = operation.get('operationType', '')
-            
-            # Считаем только операции расхода средств
-            expense_types = [
-                'резервирование средств под услугу',
-                'списание за услугу',
-                'резервирование средств',
-                'списание средств'
-            ]
-            
-            if operation_type.lower() not in [t.lower() for t in expense_types]:
-                continue
-                
-            # Получаем сумму расхода
-            amount_rub = operation.get('amountRub', 0)
-            if amount_rub <= 0:
-                continue
-                
-            # Добавляем в общую сумму расходов
-            total_expenses += amount_rub
-            
-            # Получаем информацию о типе услуги
-            service_name = operation.get('serviceName', 'Неизвестно')
-            operation_name = operation.get('operationName', 'Неизвестно')
-            service_type = operation.get('serviceType', 'Неизвестно')
-            item_id = operation.get('itemId', 'Неизвестно')
-            
-            # Формируем ключ для группировки
-            key = f"{service_name} ({service_type})"
-            
-            # Добавляем или обновляем запись в детализации
-            if key in expenses_details:
-                expenses_details[key]['amount'] += amount_rub
-                expenses_details[key]['count'] += 1
-                expenses_details[key]['items'].add(str(item_id))
-            else:
-                expenses_details[key] = {
-                    'amount': amount_rub,
-                    'count': 1,
-                    'type': operation_type,
-                    'items': {str(item_id)} if item_id != 'Неизвестно' else set()
-                }
-        
-        # Преобразуем множества объявлений в списки для сериализации JSON
-        for key in expenses_details:
-            expenses_details[key]['items'] = list(expenses_details[key]['items'])
-            if len(expenses_details[key]['items']) == 1 and expenses_details[key]['items'][0] == 'Неизвестно':
-                expenses_details[key]['items'] = []
-        
-        # Формируем структуру с результатами
-        result = {
-            'total': total_expenses,
-            'details': expenses_details
-        }
-        
-        logger.info(f"Расходы за период: общая сумма {total_expenses:.2f} руб., {len(expenses_details)} категорий")
-        return result
-    except Exception as e:
-        logger.error(f"Ошибка при получении истории операций: {e}")
-        return {
-            'total': 0,
-            'details': {}
-        }
 
 def get_daily_expenses(access_token):
     """Получает расходы за текущий день"""
