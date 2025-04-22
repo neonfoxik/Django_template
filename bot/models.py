@@ -25,14 +25,6 @@ class User(models.Model):
         blank=True,
         default="none",
     )
-    day_chats = models.IntegerField(
-        verbose_name='количество чатов за день',
-        default=0
-    )
-    week_chats = models.IntegerField(
-        verbose_name='количество чатов за неделю',
-        default=0
-    )
     daily_report_tg_id = models.CharField(
         max_length=50,
         verbose_name='Telegram ID для дневных отчетов',
