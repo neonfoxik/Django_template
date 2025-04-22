@@ -715,6 +715,7 @@ def get_operations_history(access_token, date_from, date_to):
         
         # Выполняем запрос
         response = requests.post(operations_url, headers=headers, json=data)
+        print(response.text)
         response.raise_for_status()
         
         # Проверяем, что ответ не пустой
@@ -725,7 +726,7 @@ def get_operations_history(access_token, date_from, date_to):
         # Парсим JSON ответ
         try:
             result = response.json()
-            logger.info(f"Получен ответ от API операций: {result}")
+            logger.info(f"Получен ответ от API операций")
         except json.JSONDecodeError as e:
             logger.error(f"Ошибка декодирования JSON: {e}, содержимое ответа: {response.text}")
             return {'total': 0, 'details': {}}
@@ -736,38 +737,63 @@ def get_operations_history(access_token, date_from, date_to):
         
         # Обрабатываем все операции
         for operation in result.get('operations', []):
-            # Если это расход (для простоты считаем расходом любое неотрицательное значение)
+            # Тип операции
+            operation_type = operation.get('operationType', '')
+            
+            # Считаем только операции расхода средств
+            expense_types = [
+                'резервирование средств под услугу',
+                'списание за услугу',
+                'резервирование средств',
+                'списание средств'
+            ]
+            
+            if operation_type.lower() not in [t.lower() for t in expense_types]:
+                continue
+                
+            # Получаем сумму расхода
             amount_rub = operation.get('amountRub', 0)
-            if amount_rub > 0:
-                # Добавляем в общую сумму расходов
-                total_expenses += amount_rub
+            if amount_rub <= 0:
+                continue
                 
-                # Получаем информацию о типе услуги
-                service_name = operation.get('serviceName', 'Неизвестно')
-                service_type = operation.get('serviceType', 'Неизвестно')
-                operation_type = operation.get('operationType', 'Неизвестно')
-
-                # Формируем ключ для группировки
-                key = f"{service_name} ({service_type})"
-                
-                # Добавляем или обновляем запись в детализации
-                if key in expenses_details:
-                    expenses_details[key]['amount'] += amount_rub
-                    expenses_details[key]['count'] += 1
-                else:
-                    expenses_details[key] = {
-                        'amount': amount_rub,
-                        'count': 1,
-                        'type': operation_type
-                    }
+            # Добавляем в общую сумму расходов
+            total_expenses += amount_rub
+            
+            # Получаем информацию о типе услуги
+            service_name = operation.get('serviceName', 'Неизвестно')
+            operation_name = operation.get('operationName', 'Неизвестно')
+            service_type = operation.get('serviceType', 'Неизвестно')
+            item_id = operation.get('itemId', 'Неизвестно')
+            
+            # Формируем ключ для группировки
+            key = f"{service_name} ({service_type})"
+            
+            # Добавляем или обновляем запись в детализации
+            if key in expenses_details:
+                expenses_details[key]['amount'] += amount_rub
+                expenses_details[key]['count'] += 1
+                expenses_details[key]['items'].add(str(item_id))
+            else:
+                expenses_details[key] = {
+                    'amount': amount_rub,
+                    'count': 1,
+                    'type': operation_type,
+                    'items': {str(item_id)} if item_id != 'Неизвестно' else set()
+                }
+        
+        # Преобразуем множества объявлений в списки для сериализации JSON
+        for key in expenses_details:
+            expenses_details[key]['items'] = list(expenses_details[key]['items'])
+            if len(expenses_details[key]['items']) == 1 and expenses_details[key]['items'][0] == 'Неизвестно':
+                expenses_details[key]['items'] = []
         
         # Формируем структуру с результатами
         result = {
             'total': total_expenses,
             'details': expenses_details
         }
-        logger.info(f"Расходы за период: {result}")
-        print(result)
+        
+        logger.info(f"Расходы за период: общая сумма {total_expenses:.2f} руб., {len(expenses_details)} категорий")
         return result
     except Exception as e:
         logger.error(f"Ошибка при получении истории операций: {e}")

@@ -34,15 +34,34 @@ def format_expenses_message(expenses):
     total = expenses.get('total', 0)
     details = expenses.get('details', {})
     
+    if total <= 0:
+        return "0.00 ₽"
+    
     message = f"{total:.2f} ₽\n"
     
     # Добавляем детализацию расходов, если они есть
     if details:
         message += f"📋 *Детализация расходов:*\n"
-        for service, service_details in details.items():
+        
+        # Сортируем по убыванию суммы
+        sorted_details = sorted(
+            details.items(), 
+            key=lambda x: x[1]['amount'], 
+            reverse=True
+        )
+        
+        for service, service_details in sorted_details:
             amount = service_details.get('amount', 0)
             count = service_details.get('count', 1)
-            message += f"   • {service}: {amount:.2f} ₽ ({count} операций)\n"
+            items = service_details.get('items', [])
+            
+            # Количество объявлений, если есть
+            items_count = len(items) if items else 0
+            items_suffix = ""
+            if items_count > 0:
+                items_suffix = f" ({items_count} объявл.)"
+            
+            message += f"   • {service}{items_suffix}: {amount:.2f} ₽ ({count} опер.)\n"
     
     return message
 
@@ -66,7 +85,7 @@ def daily_report(call):
         message_text += f"   • Отвечено: {response['calls']['answered']}\n"
         message_text += f"   • Пропущено: {response['calls']['missed']}\n\n"
         
-        message_text += f"💬 *Сообщения:* {response['chats']}\n"
+        message_text += f"💬 *Сообщения:*\n"
         message_text += f"   • Новых за день: {user.day_chats}\n"
         message_text += f"📱 *Показов телефона:* {response['phones_received']}\n\n"
         
@@ -120,7 +139,7 @@ def weekly_report(call):
         message_text += f"   • Отвечено: {response['calls']['answered']}\n"
         message_text += f"   • Пропущено: {response['calls']['missed']}\n\n"
         
-        message_text += f"💬 *Сообщения:* {response['chats']}\n"
+        message_text += f"💬 *Сообщения:*\n"
         message_text += f"   • Новых за неделю: {user.week_chats}\n"
         message_text += f"📱 *Показов телефона:* {response['phones_received']}\n\n"
         
@@ -170,7 +189,7 @@ def send_daily_report(telegram_id):
         message_text += f"   • Отвечено: {response['calls']['answered']}\n"
         message_text += f"   • Пропущено: {response['calls']['missed']}\n\n"
         
-        message_text += f"💬 *Сообщения:* {response['chats']}\n"
+        message_text += f"💬 *Сообщения:*\n"
         message_text += f"   • Новых за день: {user.day_chats}\n"
         message_text += f"📱 *Показов телефона:* {response['phones_received']}\n\n"
         
@@ -222,7 +241,7 @@ def send_weekly_report(telegram_id):
         message_text += f"   • Отвечено: {response['calls']['answered']}\n"
         message_text += f"   • Пропущено: {response['calls']['missed']}\n\n"
         
-        message_text += f"💬 *Сообщения:* {response['chats']}\n"
+        message_text += f"💬 *Сообщения:*\n"
         message_text += f"   • Новых за неделю: {user.week_chats}\n"
         message_text += f"📱 *Показов телефона:* {response['phones_received']}\n\n"
         
