@@ -70,5 +70,5 @@ def get_user_info(call):
     except User.DoesNotExist:
         bot.send_message(chat_id, "❌ Ошибка: пользователь не найден.")
     except Exception as e:
-        logger.error(f"Ошибка при получении информации о пользователе: {e}")
+        logger.error(f"Ошибка при получении отчета: {e}")
         bot.send_message(chat_id, f"❌ Произошла ошибка: {str(e)}")

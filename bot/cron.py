@@ -3,19 +3,24 @@ import logging
 from django.conf import settings
 from bot.models import User
 from bot.handlers.common import send_daily_report, send_weekly_report
-from bot.services import get_access_token
+from bot.services import update_user_chats_count, get_access_token
 
 logger = logging.getLogger(__name__)
 
 
 def update_users_chats():
-    """Обновление данных пользователей"""
+    """Обновление чатов пользователей"""
     users = User.objects.filter(client_id__isnull=False, client_secret__isnull=False).exclude(client_id="none")
     for user in users:
         try:
             access_token = get_access_token(user.client_id, user.client_secret)
             if not access_token:
                 continue
+                
+            # Обновляем счетчики чатов
+            new_chats = update_user_chats_count(user, access_token)
+            if new_chats > 0:
+                logger.info(f"У пользователя {user.telegram_id} появилось {new_chats} новых чатов")
             
             user.save()
             
@@ -30,7 +35,6 @@ def send_daily_reports_to_all_users():
         try:
             # Отправляем дневной отчет
             send_daily_report(user.telegram_id)
-            
         except Exception as e:
             logger.error(f"Ошибка при отправке ежедневного отчета пользователю {user.telegram_id}: {e}")
 
@@ -42,7 +46,6 @@ def send_weekly_reports_to_all_users():
         try:
             # Отправляем недельный отчет
             send_weekly_report(user.telegram_id)
-            
         except Exception as e:
             logger.error(f"Ошибка при отправке еженедельного отчета пользователю {user.telegram_id}: {e}")
 
@@ -58,6 +61,6 @@ def weekly_task():
     send_weekly_reports_to_all_users()
 
 
-def data_update_task():
-    """Задача для обновления данных пользователей через cron"""
+def chat_monitor_task():
+    """Задача для мониторинга чатов пользователей через cron"""
     update_users_chats()
