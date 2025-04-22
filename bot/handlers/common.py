@@ -86,7 +86,6 @@ def daily_report(call):
         message_text += f"   • Пропущено: {response['calls']['missed']}\n\n"
         
         message_text += f"💬 *Сообщения:*\n"
-        message_text += f"   • Новых за день: {user.day_chats}\n"
         message_text += f"📱 *Показов телефона:* {response['phones_received']}\n\n"
         
         message_text += f"⭐ *Рейтинг:* {response['rating']}\n"
@@ -140,7 +139,6 @@ def weekly_report(call):
         message_text += f"   • Пропущено: {response['calls']['missed']}\n\n"
         
         message_text += f"💬 *Сообщения:*\n"
-        message_text += f"   • Новых за неделю: {user.week_chats}\n"
         message_text += f"📱 *Показов телефона:* {response['phones_received']}\n\n"
         
         message_text += f"⭐ *Рейтинг:* {response['rating']}\n"
@@ -190,7 +188,6 @@ def send_daily_report(telegram_id):
         message_text += f"   • Пропущено: {response['calls']['missed']}\n\n"
         
         message_text += f"💬 *Сообщения:*\n"
-        message_text += f"   • Новых за день: {user.day_chats}\n"
         message_text += f"📱 *Показов телефона:* {response['phones_received']}\n\n"
         
         message_text += f"⭐ *Рейтинг:* {response['rating']}\n"
@@ -242,7 +239,6 @@ def send_weekly_report(telegram_id):
         message_text += f"   • Пропущено: {response['calls']['missed']}\n\n"
         
         message_text += f"💬 *Сообщения:*\n"
-        message_text += f"   • Новых за неделю: {user.week_chats}\n"
         message_text += f"📱 *Показов телефона:* {response['phones_received']}\n\n"
         
         message_text += f"⭐ *Рейтинг:* {response['rating']}\n"

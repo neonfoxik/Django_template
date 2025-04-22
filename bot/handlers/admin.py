@@ -3,6 +3,7 @@ from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot import bot, logger
 from bot.models import User
 from bot.services import get_daily_statistics, get_weekly_statistics
+from bot.handlers.common import format_expenses_message
 
 
 def get_users(message):
@@ -53,12 +54,21 @@ def get_user_info(call):
         message_text += f"📲 *Контакты:* {response['statistics']['contacts']}\n"
         message_text += f"❤️ *В избранном:* {response['statistics']['favorites']}\n\n"
         
-        message_text += f"💰 *Баланс:* {response['balance']} ₽"
+        message_text += f"💰 *Финансы:*\n"
+        message_text += f"   • Реальный баланс: {response['balance_real']} ₽\n"
+        message_text += f"   • Бонусы: {response['balance_bonus']} ₽\n"
+        message_text += f"   • Аванс: {response['advance']} ₽\n\n"
+        
+        message_text += f"💸 *Расходы за сегодня:* "
+        
+        # Добавляем расходы и детализацию
+        expenses_message = format_expenses_message(response.get('expenses', {}))
+        message_text += expenses_message
         
         bot.send_message(chat_id, message_text, parse_mode="Markdown")
         
     except User.DoesNotExist:
-        bot.send_message(chat_id, "❌ Ошибка: вы не зарегистрированы. Используйте /start для регистрации.")
+        bot.send_message(chat_id, "❌ Ошибка: пользователь не найден.")
     except Exception as e:
-        logger.error(f"Ошибка при получении дневного отчета: {e}")
+        logger.error(f"Ошибка при получении информации о пользователе: {e}")
         bot.send_message(chat_id, f"❌ Произошла ошибка: {str(e)}")

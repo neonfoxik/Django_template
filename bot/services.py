@@ -643,44 +643,12 @@ def get_weekly_statistics(client_id, client_secret):
         }
 
 def update_user_chats_count(user, access_token=None):
-    """Обновляет счетчики чатов пользователя и возвращает количество новых чатов"""
-    if not access_token:
-        access_token = get_access_token(user.client_id, user.client_secret)
-        if not access_token:
-            logger.error(f"Не удалось получить токен доступа для пользователя {user.telegram_id}")
-            return 0
-    
-    try:
-        # Получаем текущее количество чатов
-        current_chat_count = get_user_chats(access_token)
-        
-        # Если это первый запрос (чаты еще не считались) или поле не инициализировано
-        if not hasattr(user, 'day_chats') or user.day_chats is None:
-            user.day_chats = 0
-            
-        if not hasattr(user, 'week_chats') or user.week_chats is None:
-            user.week_chats = 0
-            
-        # Если счетчики нулевые, просто сохраняем текущее значение
-        if user.day_chats == 0:
-            user.day_chats = current_chat_count
-            user.week_chats = current_chat_count
-            user.save()
-            return 0
-        
-        # Определяем количество новых чатов за день
-        new_day_chats = current_chat_count - user.day_chats
-        if new_day_chats > 0:
-            # Обновляем счетчики
-            user.day_chats = current_chat_count
-            user.week_chats += new_day_chats  # Добавляем новые чаты к недельному счетчику
-            user.save()
-            return new_day_chats
-        
-        return 0
-    except Exception as e:
-        logger.error(f"Ошибка при обновлении счетчиков чатов: {e}")
-        return 0
+    """
+    УСТАРЕВШАЯ ФУНКЦИЯ - Больше не используется
+    Не вызывать, оставлена для обратной совместимости
+    """
+    logger.warning("Вызов устаревшей функции update_user_chats_count")
+    return 0
 
 def get_operations_history(access_token, date_from, date_to):
     """
