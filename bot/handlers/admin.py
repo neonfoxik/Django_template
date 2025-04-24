@@ -38,7 +38,9 @@ def get_user_info(call):
         message_text += f"   • Отвечено: {response['calls']['answered']}\n"
         message_text += f"   • Пропущено: {response['calls']['missed']}\n\n"
         
-        message_text += f"💬 *Сообщения:* {response['chats']}\n"
+        message_text += f"💬 *Сообщения:*\n"
+        message_text += f"   • Всего: {response['chats']['total']}\n"
+        message_text += f"   • Новых за день: {response['chats']['new']}\n"
         message_text += f"📱 *Показов телефона:* {response['phones_received']}\n\n"
         
         message_text += f"⭐ *Рейтинг:* {response['rating']}\n"
