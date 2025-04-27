@@ -4,8 +4,8 @@ import datetime
 
 
 # Получение API ключа с использованием client_id и client_secret
-client_id = 'kKQ5kxCxhcKoqw2oRx2V'
-client_secret = 'Y9C7tgtwP0uNLqoA5g5WR0GkoqkGzDJZwdroCnZ7'
+client_id = 0
+client_secret = 0
 
 # Запрос на получение токена доступа (API ключа)
 auth_url = 'https://api.avito.ru/token'
