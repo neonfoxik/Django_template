@@ -149,7 +149,6 @@ def weekly_report(call):
         message_text += f"   • За неделю: {response['reviews']['weekly']}\n\n"
         
         message_text += f"📝 *Объявления:*\n"
-        message_text += f"   • Всего: {response['items']['total']}\n"
         
         message_text += f"👁 *Просмотры:* {response['statistics']['views']}\n"
         message_text += f"📲 *Контакты:* {response['statistics']['contacts']}\n"
@@ -251,7 +250,6 @@ def send_weekly_report(telegram_id):
         message_text += f"   • За неделю: {response['reviews']['weekly']}\n\n"
         
         message_text += f"📝 *Объявления:*\n"
-        message_text += f"   • Всего: {response['items']['total']}\n"
         
         message_text += f"👁 *Просмотры:* {response['statistics']['views']}\n"
         message_text += f"📲 *Контакты:* {response['statistics']['contacts']}\n"

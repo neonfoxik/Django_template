@@ -11,6 +11,7 @@ class User(models.Model):
         max_length=35,
         verbose_name='Имя',
     )
+    
     client_id = models.CharField(
         max_length=50,
         verbose_name='Client ID Авито',
@@ -34,6 +35,24 @@ class User(models.Model):
     weekly_report_tg_id = models.CharField(
         max_length=50,
         verbose_name='Telegram ID для недельных отчетов',
+        null=True,
+        blank=True,
+    )
+    # Добавляем поля для отслеживания расходов
+    daily_expense = models.FloatField(
+        verbose_name='Дневной расход',
+        default=0,
+    )
+    weekly_expense = models.FloatField(
+        verbose_name='Недельный расход',
+        default=0,
+    )
+    last_balance = models.FloatField(
+        verbose_name='Последний баланс',
+        default=0,
+    )
+    last_balance_check = models.DateTimeField(
+        verbose_name='Время последней проверки баланса',
         null=True,
         blank=True,
     )
