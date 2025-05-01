@@ -51,5 +51,45 @@ admin = bot.message_handler(commands=["admin"])(get_users)
 start = bot.message_handler(commands=["start"])(start)
 
 get_user_info = bot.callback_query_handler(lambda c: c.data.startswith("admin_"))(get_user_info)
-daily_report = bot.callback_query_handler(lambda c: c.data == "daily_report")(daily_report)
-weekly_report = bot.callback_query_handler(lambda c: c.data == "weekly_report")(weekly_report)
+
+# Добавляем функцию-посредник для отладки daily_report
+def daily_report_wrapper(call):
+    logger.info(f"ОТЛАДКА: Обработка daily_report callback: {call.data}")
+    logger.info(f"ОТЛАДКА: from_user.id = {call.from_user.id}, chat_id = {call.message.chat.id}")
+    try:
+        daily_report(call)
+    except Exception as e:
+        logger.error(f"Ошибка в daily_report_wrapper: {e}")
+        logger.exception("Полный стек-трейс ошибки:")
+        bot.send_message(call.message.chat.id, f"❌ Произошла ошибка: {str(e)}")
+
+# Добавляем функцию-посредник для отладки weekly_report
+def weekly_report_wrapper(call):
+    logger.info(f"ОТЛАДКА: Обработка weekly_report callback: {call.data}")
+    logger.info(f"ОТЛАДКА: from_user.id = {call.from_user.id}, chat_id = {call.message.chat.id}")
+    try:
+        weekly_report(call)
+    except Exception as e:
+        logger.error(f"Ошибка в weekly_report_wrapper: {e}")
+        logger.exception("Полный стек-трейс ошибки:")
+        bot.send_message(call.message.chat.id, f"❌ Произошла ошибка: {str(e)}")
+
+# Обработчик дневных отчетов из кнопок меню и кнопок выбора аккаунта
+daily_report_handler = bot.callback_query_handler(func=lambda c: c.data == "daily_report" or c.data.startswith("daily_report_"))(daily_report_wrapper)
+
+# Обработчик недельных отчетов из кнопок меню и кнопок выбора аккаунта
+weekly_report_handler = bot.callback_query_handler(func=lambda c: c.data == "weekly_report" or c.data.startswith("weekly_report_"))(weekly_report_wrapper)
+
+@bot.message_handler(commands=["daily"])
+def daily_command(message):
+    """Обработчик команды /daily для получения дневного отчета"""
+    from bot.handlers.common import select_avito_account
+    logger.info(f"ОТЛАДКА: Команда /daily от пользователя {message.from_user.id}, chat_id = {message.chat.id}")
+    select_avito_account(message.chat.id, message.from_user.id, "daily_report")
+
+@bot.message_handler(commands=["weekly"])
+def weekly_command(message):
+    """Обработчик команды /weekly для получения недельного отчета"""
+    from bot.handlers.common import select_avito_account
+    logger.info(f"ОТЛАДКА: Команда /weekly от пользователя {message.from_user.id}, chat_id = {message.chat.id}")
+    select_avito_account(message.chat.id, message.from_user.id, "weekly_report")

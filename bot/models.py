@@ -12,6 +12,19 @@ class User(models.Model):
         verbose_name='Имя',
     )
     
+    class Meta:
+        verbose_name = 'Пользователь'
+        verbose_name_plural = 'Пользователи'
+
+    def __str__(self):
+        return self.user_name
+
+
+class AvitoAccount(models.Model):
+    name = models.CharField(
+        max_length=100,
+        verbose_name='Имя аккаунта',
+    )
     client_id = models.CharField(
         max_length=50,
         verbose_name='Client ID Авито',
@@ -56,3 +69,33 @@ class User(models.Model):
         null=True,
         blank=True,
     )
+    
+    class Meta:
+        verbose_name = 'Аккаунт Авито'
+        verbose_name_plural = 'Аккаунты Авито'
+    
+    def __str__(self):
+        return self.name
+    
+    
+class UserAvitoAccount(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='avito_accounts',
+        verbose_name='Пользователь'
+    )
+    avito_account = models.ForeignKey(
+        AvitoAccount,
+        on_delete=models.CASCADE,
+        related_name='users',
+        verbose_name='Аккаунт Авито'
+    )
+    
+    class Meta:
+        verbose_name = 'Связь пользователь-аккаунт'
+        verbose_name_plural = 'Связи пользователей и аккаунтов'
+        unique_together = ('user', 'avito_account')
+        
+    def __str__(self):
+        return f"{self.user.user_name} - {self.avito_account.name}"

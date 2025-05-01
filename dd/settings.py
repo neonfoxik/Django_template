@@ -26,14 +26,14 @@ ALLOWED_HOSTS = ["*"]
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 OWNER_ID = os.getenv('OWNER_ID')
-CHANNEL_NAME1 = os.getenv('CHANNEL_NAME1')
-CHANNEL_NAME2 = os.getenv('CHANNEL_NAME2')
 BOT_NAME = os.getenv("BOT_NAME")
 HOOK = os.getenv('HOOK')
 
 # Application definition
 BOT_COMMANDS = [
     BotCommand("start", "Меню"),
+    BotCommand("daily", "Отчет за день"),
+    BotCommand("weekly", "Отчет за неделю"),
 ]
 INSTALLED_APPS = [
     'bot',
@@ -116,7 +116,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'ru-ru'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Europe/Moscow'
 
 USE_I18N = True
 
