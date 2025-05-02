@@ -22,14 +22,18 @@ def get_user_info(call):
     """Получение авито-статистики по пользователю"""
     chat_id = call.message.chat.id
     _, user_id = call.data.split("_")
-
-    bot.send_message(chat_id, "⏳ Получаем данные из API Авито...")
+    
+    # Отправляем сообщение о загрузке и сохраняем его ID
+    loading_message = bot.send_message(chat_id, "⏳ Получаем данные из API Авито...")
     
     try:
         user = User.objects.get(telegram_id=user_id)
         client_id = user.client_id
         client_secret = user.client_secret
         response = get_daily_statistics(client_id, client_secret)
+        
+        # Удаляем сообщение о загрузке после получения данных
+        bot.delete_message(chat_id, loading_message.message_id)
         
         # Формируем читаемое сообщение для пользователя
         message_text = f"📊 *Статистика за {response['date']}*\n*👤 {user.user_name}*\n\n"
@@ -70,7 +74,14 @@ def get_user_info(call):
         bot.send_message(chat_id, message_text, parse_mode="Markdown")
         
     except User.DoesNotExist:
+        # Удаляем сообщение о загрузке в случае ошибки
+        bot.delete_message(chat_id, loading_message.message_id)
         bot.send_message(chat_id, "❌ Ошибка: пользователь не найден.")
     except Exception as e:
+        # Удаляем сообщение о загрузке в случае ошибки
+        try:
+            bot.delete_message(chat_id, loading_message.message_id)
+        except:
+            pass
         logger.error(f"Ошибка при получении отчета: {e}")
         bot.send_message(chat_id, f"❌ Произошла ошибка: {str(e)}")

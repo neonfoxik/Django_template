@@ -171,13 +171,17 @@ def weekly_report(call):
 
 def daily_report_for_account(chat_id, account_id):
     """Отправка дневного отчета для конкретного аккаунта"""
-    bot.send_message(chat_id, "⏳ Получаем данные из API Авито...")
+    # Отправляем сообщение о загрузке и сохраняем его ID
+    loading_message = bot.send_message(chat_id, "⏳ Получаем данные из API Авито...")
     
     try:
         account = AvitoAccount.objects.get(id=account_id)
         client_id = account.client_id
         client_secret = account.client_secret
         response = get_daily_statistics(client_id, client_secret)
+        
+        # Удаляем сообщение о загрузке после получения данных
+        bot.delete_message(chat_id, loading_message.message_id)
         
         # Формируем читаемое сообщение для пользователя
         message_text = f"📊 *Статистика за {response['date']} - {account.name}*\n\n"
@@ -216,20 +220,31 @@ def daily_report_for_account(chat_id, account_id):
         bot.send_message(chat_id, message_text, parse_mode="Markdown")
         
     except AvitoAccount.DoesNotExist:
+        # Удаляем сообщение о загрузке в случае ошибки
+        bot.delete_message(chat_id, loading_message.message_id)
         bot.send_message(chat_id, "❌ Ошибка: аккаунт не найден")
     except Exception as e:
+        # Удаляем сообщение о загрузке в случае ошибки
+        try:
+            bot.delete_message(chat_id, loading_message.message_id)
+        except:
+            pass
         logger.error(f"Ошибка при получении дневного отчета: {e}")
         bot.send_message(chat_id, f"❌ Произошла ошибка: {str(e)}")
 
 def weekly_report_for_account(chat_id, account_id):
     """Отправка недельного отчета для конкретного аккаунта"""
-    bot.send_message(chat_id, "⏳ Получаем данные из API Авито...")
+    # Отправляем сообщение о загрузке и сохраняем его ID
+    loading_message = bot.send_message(chat_id, "⏳ Получаем данные из API Авито...")
     
     try:
         account = AvitoAccount.objects.get(id=account_id)
         client_id = account.client_id
         client_secret = account.client_secret
         response = get_weekly_statistics(client_id, client_secret)
+        
+        # Удаляем сообщение о загрузке после получения данных
+        bot.delete_message(chat_id, loading_message.message_id)
         
         # Формируем читаемое сообщение для пользователя
         message_text = f"📈 *Статистика за период: {response['period']} - {account.name}*\n\n"
@@ -267,8 +282,15 @@ def weekly_report_for_account(chat_id, account_id):
         bot.send_message(chat_id, message_text, parse_mode="Markdown")
         
     except AvitoAccount.DoesNotExist:
+        # Удаляем сообщение о загрузке в случае ошибки
+        bot.delete_message(chat_id, loading_message.message_id)
         bot.send_message(chat_id, "❌ Ошибка: аккаунт не найден")
     except Exception as e:
+        # Удаляем сообщение о загрузке в случае ошибки
+        try:
+            bot.delete_message(chat_id, loading_message.message_id)
+        except:
+            pass
         logger.error(f"Ошибка при получении недельного отчета: {e}")
         bot.send_message(chat_id, f"❌ Произошла ошибка: {str(e)}")
 
