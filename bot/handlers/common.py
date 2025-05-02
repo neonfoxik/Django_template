@@ -397,3 +397,41 @@ def add_avito_account(message):
     """Обработчик для добавления нового аккаунта Авито"""
     from bot.handlers.registration import add_avito_account as register_new_account
     register_new_account(message)
+
+def get_daily_reports_for_chat(chat_id):
+    """Получение дневных отчетов для всех аккаунтов, связанных с чатом по daily_report_tg_id"""
+    # Получаем все аккаунты с указанным ID чата для дневных отчетов
+    accounts = AvitoAccount.objects.filter(
+        models.Q(daily_report_tg_id=str(chat_id)) | models.Q(daily_report_tg_id=chat_id),
+        client_id__isnull=False, 
+        client_secret__isnull=False
+    ).exclude(client_id="none").distinct()
+    
+    logger.info(f"ОТЛАДКА: Найдено аккаунтов Авито для дневных отчетов по chat_id={chat_id}: {accounts.count()}")
+    
+    if not accounts.exists():
+        bot.send_message(chat_id, "❌ Не найдено аккаунтов Авито для получения дневных отчетов")
+        return
+    
+    # Для каждого аккаунта получаем отчет
+    for account in accounts:
+        daily_report_for_account(chat_id, account.id)
+
+def get_weekly_reports_for_chat(chat_id):
+    """Получение недельных отчетов для всех аккаунтов, связанных с чатом по weekly_report_tg_id"""
+    # Получаем все аккаунты с указанным ID чата для недельных отчетов
+    accounts = AvitoAccount.objects.filter(
+        models.Q(weekly_report_tg_id=str(chat_id)) | models.Q(weekly_report_tg_id=chat_id),
+        client_id__isnull=False, 
+        client_secret__isnull=False
+    ).exclude(client_id="none").distinct()
+    
+    logger.info(f"ОТЛАДКА: Найдено аккаунтов Авито для недельных отчетов по chat_id={chat_id}: {accounts.count()}")
+    
+    if not accounts.exists():
+        bot.send_message(chat_id, "❌ Не найдено аккаунтов Авито для получения недельных отчетов")
+        return
+    
+    # Для каждого аккаунта получаем отчет
+    for account in accounts:
+        weekly_report_for_account(chat_id, account.id)

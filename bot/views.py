@@ -83,13 +83,13 @@ weekly_report_handler = bot.callback_query_handler(func=lambda c: c.data == "wee
 @bot.message_handler(commands=["daily"])
 def daily_command(message):
     """Обработчик команды /daily для получения дневного отчета"""
-    from bot.handlers.common import select_avito_account
+    from bot.handlers.common import get_daily_reports_for_chat
     logger.info(f"ОТЛАДКА: Команда /daily от пользователя {message.from_user.id}, chat_id = {message.chat.id}")
-    select_avito_account(message.chat.id, message.from_user.id, "daily_report")
+    get_daily_reports_for_chat(message.chat.id)
 
 @bot.message_handler(commands=["weekly"])
 def weekly_command(message):
     """Обработчик команды /weekly для получения недельного отчета"""
-    from bot.handlers.common import select_avito_account
+    from bot.handlers.common import get_weekly_reports_for_chat
     logger.info(f"ОТЛАДКА: Команда /weekly от пользователя {message.from_user.id}, chat_id = {message.chat.id}")
-    select_avito_account(message.chat.id, message.from_user.id, "weekly_report")
+    get_weekly_reports_for_chat(message.chat.id)
