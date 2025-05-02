@@ -12,15 +12,19 @@ def send_daily_reports_to_all_users():
     """Отправка ежедневных отчетов всем пользователям"""
     accounts = AvitoAccount.objects.filter(
         client_id__isnull=False, 
-        client_secret__isnull=False, 
-        daily_report_tg_id__isnull=False
+        client_secret__isnull=False
     ).exclude(client_id="none")
+    
+    logger.info(f'Найдено аккаунтов для ежедневных отчетов: {accounts.count()}')
     
     for account in accounts:
         try:
             # Отправляем дневной отчет в указанный telegram_id
             if account.daily_report_tg_id:
+                logger.info(f"Отправка ежедневного отчета для аккаунта {account.name} на ID: {account.daily_report_tg_id}")
                 send_daily_report(account.daily_report_tg_id, account.id)
+            else:
+                logger.info(f"Аккаунт {account.name} не имеет указанного получателя ежедневных отчетов")
         except Exception as e:
             logger.error(f"Ошибка при отправке ежедневного отчета для аккаунта {account.name}: {e}")
 
@@ -29,15 +33,19 @@ def send_weekly_reports_to_all_users():
     """Отправка еженедельных отчетов всем пользователям"""
     accounts = AvitoAccount.objects.filter(
         client_id__isnull=False, 
-        client_secret__isnull=False, 
-        weekly_report_tg_id__isnull=False
+        client_secret__isnull=False
     ).exclude(client_id="none")
+    
+    logger.info(f'Найдено аккаунтов для еженедельных отчетов: {accounts.count()}')
     
     for account in accounts:
         try:
             # Отправляем недельный отчет
             if account.weekly_report_tg_id:
+                logger.info(f"Отправка еженедельного отчета для аккаунта {account.name} на ID: {account.weekly_report_tg_id}")
                 send_weekly_report(account.weekly_report_tg_id, account.id)
+            else:
+                logger.info(f"Аккаунт {account.name} не имеет указанного получателя еженедельных отчетов")
         except Exception as e:
             logger.error(f"Ошибка при отправке еженедельного отчета для аккаунта {account.name}: {e}")
 

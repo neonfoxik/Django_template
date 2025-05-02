@@ -19,17 +19,19 @@ class Command(BaseCommand):
         """Отправка еженедельных отчетов всем пользователям"""
         accounts = AvitoAccount.objects.filter(
             client_id__isnull=False, 
-            client_secret__isnull=False, 
-            weekly_report_tg_id__isnull=False
+            client_secret__isnull=False
         ).exclude(client_id="none")
+        
+        self.stdout.write(f'Найдено аккаунтов для отправки отчетов: {accounts.count()}')
         
         for account in accounts:
             try:
                 # Отправляем недельный отчет
                 if account.weekly_report_tg_id:
-                    # Передаем telegram_id и account_id
                     self.stdout.write(f"Отправка отчета для аккаунта {account.name} на ID: {account.weekly_report_tg_id}")
                     send_weekly_report(account.weekly_report_tg_id, account.id)
+                else:
+                    self.stdout.write(f"Аккаунт {account.name} не имеет указанного получателя еженедельных отчетов")
             except Exception as e:
                 logger.error(f"Ошибка при отправке еженедельного отчета для аккаунта {account.name}: {e}")
 

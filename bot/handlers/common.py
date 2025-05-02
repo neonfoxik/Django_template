@@ -82,27 +82,17 @@ def select_avito_account(chat_id, user_id, callback_prefix):
             bot.send_message(chat_id, "❌ Вы не зарегистрированы. Используйте /start для регистрации.")
             return
         
-        # Проверяем как строку и как число
-        user_id_str = str(user_id)
-        
-        # Получаем все аккаунты Авито, к которым у пользователя есть доступ
-        # Сначала получаем через связи UserAvitoAccount
-        user_account_ids = UserAvitoAccount.objects.filter(user=user).values_list('avito_account_id', flat=True)
-        
-        # Затем добавляем аккаунты, где пользователь указан в качестве получателя отчетов
+        # Получаем все аккаунты Авито в системе
         accounts = AvitoAccount.objects.filter(
-            models.Q(id__in=user_account_ids) | 
-            models.Q(daily_report_tg_id=user_id_str) | 
-            models.Q(weekly_report_tg_id=user_id_str) |
-            models.Q(daily_report_tg_id=user_id) | 
-            models.Q(weekly_report_tg_id=user_id)
-        ).distinct()
+            client_id__isnull=False,
+            client_secret__isnull=False
+        ).exclude(client_id="none").distinct()
         
         logger.info(f"ОТЛАДКА: Найдено аккаунтов Авито: {accounts.count()}")
         
         if not accounts.exists():
-            bot.send_message(chat_id, "❌ У вас нет зарегистрированных аккаунтов Авито")
-            logger.error(f"Нет аккаунтов для пользователя {user_id}")
+            bot.send_message(chat_id, "❌ В системе нет зарегистрированных аккаунтов Авито")
+            logger.error(f"Нет аккаунтов в системе")
             return
             
         if accounts.count() == 1:
