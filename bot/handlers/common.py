@@ -410,7 +410,8 @@ def get_daily_reports_for_chat(chat_id):
     logger.info(f"ОТЛАДКА: Найдено аккаунтов Авито для дневных отчетов по chat_id={chat_id}: {accounts.count()}")
     
     if not accounts.exists():
-        bot.send_message(chat_id, "❌ Не найдено аккаунтов Авито для получения дневных отчетов")
+        # В целях безопасности показываем сообщение только если чат привязан
+        bot.send_message(chat_id, f"К данному чату (ID: {chat_id}) не прилинкован ни один авито аккаунт. Укажите этот ID в поле daily_report_tg_id авито аккаунта через админ панель.")
         return
     
     # Для каждого аккаунта получаем отчет
@@ -429,7 +430,8 @@ def get_weekly_reports_for_chat(chat_id):
     logger.info(f"ОТЛАДКА: Найдено аккаунтов Авито для недельных отчетов по chat_id={chat_id}: {accounts.count()}")
     
     if not accounts.exists():
-        bot.send_message(chat_id, "❌ Не найдено аккаунтов Авито для получения недельных отчетов")
+        # В целях безопасности показываем сообщение только если чат привязан
+        bot.send_message(chat_id, f"К данному чату (ID: {chat_id}) не прилинкован ни один авито аккаунт. Укажите этот ID в поле weekly_report_tg_id авито аккаунта через админ панель.")
         return
     
     # Для каждого аккаунта получаем отчет

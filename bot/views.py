@@ -84,12 +84,14 @@ weekly_report_handler = bot.callback_query_handler(func=lambda c: c.data == "wee
 def daily_command(message):
     """Обработчик команды /daily для получения дневного отчета"""
     from bot.handlers.common import get_daily_reports_for_chat
-    logger.info(f"ОТЛАДКА: Команда /daily от пользователя {message.from_user.id}, chat_id = {message.chat.id}")
-    get_daily_reports_for_chat(message.chat.id)
+    chat_id = message.chat.id
+    logger.info(f"ОТЛАДКА: Команда /daily в чате {chat_id} от пользователя {message.from_user.id}")
+    get_daily_reports_for_chat(chat_id)
 
 @bot.message_handler(commands=["weekly"])
 def weekly_command(message):
     """Обработчик команды /weekly для получения недельного отчета"""
     from bot.handlers.common import get_weekly_reports_for_chat
-    logger.info(f"ОТЛАДКА: Команда /weekly от пользователя {message.from_user.id}, chat_id = {message.chat.id}")
-    get_weekly_reports_for_chat(message.chat.id)
+    chat_id = message.chat.id
+    logger.info(f"ОТЛАДКА: Команда /weekly в чате {chat_id} от пользователя {message.from_user.id}")
+    get_weekly_reports_for_chat(chat_id)
