@@ -5,34 +5,33 @@ from bot.services import get_access_token, get_avito_user_id
 
 
 def start_registration(message):
-    from bot.handlers.common import menu_m
-    """ Функция для регистрации пользователей """
-    user_id = message.from_user.id
+    """ Функция для отображения информации о боте """
     chat_id = message.chat.id
     
     # Проверяем, является ли чат группой (chat_id < 0 для групп)
     if chat_id < 0:
         bot.send_message(
             chat_id=chat_id, 
-            text=f"Добро пожаловать в группу! ID этой группы: {chat_id}. "
+            text=f"Этот бот для получения статистики авито аккаунта.\n\n"
+                 f"ID этой группы: {chat_id}\n"
                  f"Укажите этот ID в поле daily_report_tg_id или weekly_report_tg_id аккаунта Авито "
-                 f"через админ-панель, чтобы получать отчеты."
+                 f"через админ-панель, чтобы получать отчеты в эту группу.\n\n"
+                 f"Используйте команды:\n"
+                 f"/daily - получить ежедневный отчет\n"
+                 f"/weekly - получить еженедельный отчет"
         )
-        return
-    
-    # Для личных чатов продолжаем регистрацию
-    user = User.objects.filter(telegram_id=user_id)
-    if user.exists():
-        menu_m(message)
     else:
-        # Сначала создаем пользователя Telegram
-        user = User.objects.create(
-            telegram_id=user_id,
-            user_name=message.from_user.first_name
+        # Для личных чатов
+        bot.send_message(
+            chat_id=chat_id, 
+            text=f"Этот бот для получения статистики авито аккаунта.\n\n"
+                 f"Ваш ID: {message.from_user.id}\n"
+                 f"Укажите этот ID в поле daily_report_tg_id или weekly_report_tg_id аккаунта Авито "
+                 f"через админ-панель, чтобы получать отчеты.\n\n"
+                 f"Используйте команды:\n"
+                 f"/daily - получить ежедневный отчет\n"
+                 f"/weekly - получить еженедельный отчет"
         )
-        user.save()
-        # Запускаем регистрацию аккаунта Авито
-        start_avito_account_registration(message)
 
 
 def start_avito_account_registration(message):
