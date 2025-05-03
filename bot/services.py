@@ -754,15 +754,16 @@ def get_avito_user_id(client_id, client_secret):
 
 def get_daily_statistics(client_id, client_secret):
     try:
-        # Получаем текущую дату
+        # Получаем текущую дату и вчерашнюю дату
         current_time = datetime.datetime.now()
-        today_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
-        today_end = current_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        yesterday = current_time - datetime.timedelta(days=1)
+        yesterday_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+        yesterday_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999).strftime("%Y-%m-%dT%H:%M:%SZ")
         
         # Форматы дат для разных API
-        today_date = current_time.strftime("%Y-%m-%d")
+        yesterday_date = yesterday.strftime("%Y-%m-%d")
         
-        logger.info(f"Запрос дневной статистики за {today_date}")
+        logger.info(f"Запрос дневной статистики за {yesterday_date}")
         
         # Получаем токен доступа
         access_token = get_access_token(client_id, client_secret)
@@ -789,7 +790,7 @@ def get_daily_statistics(client_id, client_secret):
         items_stats = {"total_views": 0, "total_contacts": 0, "total_favorites": 0}
         
         # Создаем ключ для кэша статистики
-        stats_cache_key = f"daily_stats_{user_id}_{today_date}"
+        stats_cache_key = f"daily_stats_{user_id}_{yesterday_date}"
         
         # Проверяем, есть ли у нас кэшированные данные
         if hasattr(get_daily_statistics, '_stats_cache') and stats_cache_key in get_daily_statistics._stats_cache:
@@ -814,8 +815,8 @@ def get_daily_statistics(client_id, client_secret):
         
         profile_stats = {}
         if use_profile_stats:
-            # Получаем расширенную статистику профиля
-            profile_stats = get_profile_statistics(access_token, user_id, date_from=today_date, date_to=today_date)
+            # Получаем расширенную статистику профиля за вчерашний день
+            profile_stats = get_profile_statistics(access_token, user_id, date_from=yesterday_date, date_to=yesterday_date)
         
         # Если статистика успешно получена, используем ее
         if profile_stats:
@@ -871,29 +872,29 @@ def get_daily_statistics(client_id, client_secret):
             
             # Если расширенная статистика недоступна, используем старые методы
             try:
-                # Получаем статистику звонков
-                total_calls = get_total_calls(access_token, today_start, today_end)
-                missed_calls = get_missed_calls(access_token, today_start, today_end)
+                # Получаем статистику звонков за вчерашний день
+                total_calls = get_total_calls(access_token, yesterday_start, yesterday_end)
+                missed_calls = get_missed_calls(access_token, yesterday_start, yesterday_end)
             except Exception as e:
                 logger.error(f"Ошибка при получении статистики звонков: {e}")
             
             try:
-                # Получаем чаты
-                total_chats = get_user_chats(access_token, today_start, today_end)
+                # Получаем чаты за вчерашний день
+                total_chats = get_user_chats(access_token, yesterday_start, yesterday_end)
             except Exception as e:
                 logger.error(f"Ошибка при получении информации о чатах: {e}")
                 
             try:
-                # Получаем информацию о объявлениях
-                item_ids = get_user_items_stats(access_token, user_id, date_from=today_start, date_to=today_end)
-                items_stats = get_items_statistics(access_token, user_id, item_ids, date_from=today_start, date_to=today_end)
+                # Получаем информацию о объявлениях за вчерашний день
+                item_ids = get_user_items_stats(access_token, user_id, date_from=yesterday_start, date_to=yesterday_end)
+                items_stats = get_items_statistics(access_token, user_id, item_ids, date_from=yesterday_start, date_to=yesterday_end)
                 promotion_info = get_item_promotion_info(access_token, user_id, item_ids)
             except Exception as e:
                 logger.error(f"Ошибка при получении информации об объявлениях: {e}")
                 
             try:
-                # Получаем информацию о расходах
-                expenses_info = get_operations_history(access_token, today_start, today_end)
+                # Получаем информацию о расходах за вчерашний день
+                expenses_info = get_operations_history(access_token, yesterday_start, yesterday_end)
             except Exception as e:
                 logger.error(f"Ошибка при получении информации о расходах: {e}")
         
@@ -901,19 +902,19 @@ def get_daily_statistics(client_id, client_secret):
         try:
             # Если статистика профиля не вернула пропущенные звонки, получаем их отдельно
             if missed_calls == 0 and total_calls > 0:
-                missed_calls = get_missed_calls(access_token, today_start, today_end)
+                missed_calls = get_missed_calls(access_token, yesterday_start, yesterday_end)
         except Exception as e:
             logger.error(f"Ошибка при получении информации о пропущенных звонках: {e}")
             
         try:
             # Получаем новые чаты за период (функция использует фильтрацию по дате)
-            new_chats = get_chats_by_time(access_token, today_start)
-            total_phones = get_all_numbers(access_token, today_start, today_end)
+            new_chats = get_chats_by_time(access_token, yesterday_start)
+            total_phones = get_all_numbers(access_token, yesterday_start, yesterday_end)
         except Exception as e:
             logger.error(f"Ошибка при получении дополнительной информации о чатах и телефонах: {e}")
         
         try:
-            # Получаем полную информацию о балансе
+            # Получаем полную информацию о балансе (текущую)
             balance_info = get_user_balance_info(access_token, user_id)
         except Exception as e:
             logger.error(f"Ошибка при получении информации о балансе: {e}")
@@ -921,13 +922,13 @@ def get_daily_statistics(client_id, client_secret):
         try:
             # Получаем рейтинг и отзывы
             rating = get_user_rating_info(access_token)
-            reviews_info = get_user_reviews(access_token, today_start, today_end)
+            reviews_info = get_user_reviews(access_token, yesterday_start, yesterday_end)
         except Exception as e:
             logger.error(f"Ошибка при получении информации о рейтинге и отзывах: {e}")
         
-        # Формируем и возвращаем полную статистику за день
+        # Формируем и возвращаем полную статистику за вчерашний день
         result = {
-            "date": current_time.strftime("%Y-%m-%d"),
+            "date": yesterday_date,
             "calls": {
                 "total": total_calls,
                 "missed": missed_calls,
@@ -963,14 +964,15 @@ def get_daily_statistics(client_id, client_secret):
             get_daily_statistics._stats_cache = {}
         get_daily_statistics._stats_cache[stats_cache_key] = (result, current_time)
         
-        logger.info(f"Дневная статистика успешно получена")
+        logger.info(f"Дневная статистика за вчера успешно получена")
         return result
         
     except Exception as e:
         logger.error(f"Ошибка при получении дневной статистики: {e}")
         # Возвращаем структуру с нулевыми значениями в случае ошибки
+        yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
         return {
-            "date": current_time.strftime("%Y-%m-%d"),
+            "date": yesterday,
             "calls": {"total": 0, "missed": 0, "answered": 0},
             "balance_real": 0,
             "balance_bonus": 0,

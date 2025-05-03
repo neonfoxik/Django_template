@@ -197,7 +197,7 @@ def daily_report_for_account(chat_id, account_id):
         message_text += f"⭐ *Рейтинг:* {response['rating']}\n"
         message_text += f"👍 *Отзывы:*\n"
         message_text += f"   • Всего: {response['reviews']['total']}\n"
-        message_text += f"   • За сегодня: {response['reviews']['today']}\n\n"
+        message_text += f"   • За день: {response['reviews']['today']}\n\n"
         
         message_text += f"📝 *Объявления:*\n"
         message_text += f"   • Всего: {response['items']['total']}\n"
@@ -211,7 +211,7 @@ def daily_report_for_account(chat_id, account_id):
         message_text += f"   • Бонусы: {response['balance_bonus']} ₽\n"
         message_text += f"   • Аванс: {response['advance']} ₽\n\n"
         
-        message_text += f"💸 *Расходы за сегодня:* "
+        message_text += f"💸 *Расходы за день:* "
         
         # Добавляем расходы и детализацию
         expenses_message = format_expenses_message(response.get('expenses', {}))
@@ -316,7 +316,7 @@ def send_daily_report(telegram_id, account_id):
         message_text += f"⭐ *Рейтинг:* {response['rating']}\n"
         message_text += f"👍 *Отзывы:*\n"
         message_text += f"   • Всего: {response['reviews']['total']}\n"
-        message_text += f"   • За сегодня: {response['reviews']['today']}\n\n"
+        message_text += f"   • За день: {response['reviews']['today']}\n\n"
         
         message_text += f"📝 *Объявления:*\n"
         message_text += f"   • Всего: {response['items']['total']}\n"
@@ -330,7 +330,7 @@ def send_daily_report(telegram_id, account_id):
         message_text += f"   • Бонусы: {response['balance_bonus']} ₽\n"
         message_text += f"   • Аванс: {response['advance']} ₽\n\n"
         
-        message_text += f"💸 *Расходы за сегодня:* "
+        message_text += f"💸 *Расходы за день:* "
         
         # Добавляем расходы и детализацию
         expenses_message = format_expenses_message(response.get('expenses', {}))
