@@ -8,6 +8,19 @@ def start_registration(message):
     from bot.handlers.common import menu_m
     """ Функция для регистрации пользователей """
     user_id = message.from_user.id
+    chat_id = message.chat.id
+    
+    # Проверяем, является ли чат группой (chat_id < 0 для групп)
+    if chat_id < 0:
+        bot.send_message(
+            chat_id=chat_id, 
+            text=f"Добро пожаловать в группу! ID этой группы: {chat_id}. "
+                 f"Укажите этот ID в поле daily_report_tg_id или weekly_report_tg_id аккаунта Авито "
+                 f"через админ-панель, чтобы получать отчеты."
+        )
+        return
+    
+    # Для личных чатов продолжаем регистрацию
     user = User.objects.filter(telegram_id=user_id)
     if user.exists():
         menu_m(message)

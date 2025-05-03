@@ -48,7 +48,15 @@ def index(request: HttpRequest) -> JsonResponse:
 
 """Common"""
 admin = bot.message_handler(commands=["admin"])(get_users)
-start = bot.message_handler(commands=["start"])(start)
+
+# Создаем обертку для команды start, чтобы использовать chat_id
+@bot.message_handler(commands=["start"])
+def start_command(message):
+    """Обработчик команды /start"""
+    from bot.handlers.common import start
+    chat_id = message.chat.id
+    logger.info(f"ОТЛАДКА: Команда /start в чате {chat_id} от пользователя {message.from_user.id}")
+    start(message)
 
 get_user_info = bot.callback_query_handler(lambda c: c.data.startswith("admin_"))(get_user_info)
 
