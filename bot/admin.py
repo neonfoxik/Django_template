@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import User, AvitoAccount, UserAvitoAccount
+from .models import User, AvitoAccount, UserAvitoAccount, AvitoAccountDailyStats
 
 class UserAdmin(admin.ModelAdmin):
     list_display = ('user_name',)  # Удалены недопустимые поля
@@ -23,6 +23,14 @@ class UserAvitoAccountAdmin(admin.ModelAdmin):
     search_fields = ('user__user_name', 'avito_account__name')
     list_filter = ('avito_account',)
 
+class AvitoAccountDailyStatsAdmin(admin.ModelAdmin):
+    list_display = ('avito_account', 'date', 'total_calls', 'total_chats', 'views', 'contacts', 'daily_expense')
+    list_filter = ('avito_account', 'date')
+    search_fields = ('avito_account__name',)
+    date_hierarchy = 'date'
+    ordering = ('-date',)
+
 admin.site.register(User, UserAdmin)
 admin.site.register(AvitoAccount, AvitoAccountAdmin)
 admin.site.register(UserAvitoAccount, UserAvitoAccountAdmin)
+admin.site.register(AvitoAccountDailyStats, AvitoAccountDailyStatsAdmin)

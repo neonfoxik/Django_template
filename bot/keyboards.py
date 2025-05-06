@@ -5,6 +5,6 @@ from telebot.types import (
 
 
 main_markup = InlineKeyboardMarkup()
-btn2 = InlineKeyboardButton("Отчет за неделю", callback_data="weekly_report")
-btn3 = InlineKeyboardButton("Отчет за день", callback_data="daily_report")
-main_markup.add(btn2).add(btn3)
+main_markup.add(InlineKeyboardButton('📊 Дневной отчет', callback_data='daily_report'))
+main_markup.add(InlineKeyboardButton('📈 Недельный отчет', callback_data='weekly_report'))
+main_markup.add(InlineKeyboardButton('📅 Статистика за период', callback_data='stats_menu'))
