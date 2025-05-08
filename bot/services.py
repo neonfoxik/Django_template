@@ -313,7 +313,7 @@ def get_user_chats(access_token, date_from=None, date_to=None, unread_only=False
         logger.error(f"Ошибка при получении списка чатов: {e}")
         return 0
 
-def get_chats_by_time(access_token, date_from=None):
+def get_chats_by_time(access_token, date_from=None, date_to=None):
     """
     Получение новых чатов после указанной даты
     
@@ -321,6 +321,8 @@ def get_chats_by_time(access_token, date_from=None):
         access_token: Токен доступа к API
         date_from: Время, с которого нужно начинать поиск чатов (RFC3339)
                   Если не передано, берется начало текущего дня/недели
+        date_to: Время, до которого нужно искать чаты (RFC3339)
+                Если не передано, берется текущее время
     
     Returns:
         int: Количество новых чатов
@@ -330,6 +332,10 @@ def get_chats_by_time(access_token, date_from=None):
         if date_from is None:
             current_time = datetime.datetime.now()
             date_from = current_time.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+            
+        # Если конечная дата не передана, используем текущее время
+        if date_to is None:
+            date_to = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
 
         # Получаем информацию о пользователе для получения user_id
         user_info = get_user_info(access_token)
@@ -344,10 +350,11 @@ def get_chats_by_time(access_token, date_from=None):
         total_chats = get_user_chats(
             access_token=access_token,
             date_from=date_from,
+            date_to=date_to,
             chat_types='u2i'
         )
         
-        logger.info(f"Найдено {total_chats} чатов после {date_from}")
+        logger.info(f"Найдено {total_chats} чатов в период с {date_from} по {date_to}")
         return total_chats
             
     except Exception as e:
@@ -752,458 +759,6 @@ def get_avito_user_id(client_id, client_secret):
 
 
 
-def get_daily_statistics(client_id, client_secret):
-    try:
-        # Получаем текущую дату и вчерашнюю дату
-        current_time = datetime.datetime.now()
-        yesterday = current_time - datetime.timedelta(days=1)
-        yesterday_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
-        yesterday_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999).strftime("%Y-%m-%dT%H:%M:%SZ")
-        
-        # Форматы дат для разных API
-        yesterday_date = yesterday.strftime("%Y-%m-%d")
-        
-        logger.info(f"Запрос дневной статистики за {yesterday_date}")
-        
-        # Получаем токен доступа
-        access_token = get_access_token(client_id, client_secret)
-        if not access_token:
-            logger.error("Не удалось получить токен доступа")
-            raise Exception("Не удалось получить токен доступа")
-            
-        user_id = get_avito_user_id(client_id, client_secret)
-        if not user_id:
-            logger.error("Не удалось получить ID пользователя")
-            raise Exception("Не удалось получить ID пользователя")
-        
-        # Инициализируем значения по умолчанию
-        total_calls = 0
-        missed_calls = 0
-        balance_info = {"balance_real": 0, "balance_bonus": 0, "advance": 0}
-        expenses_info = {"total": 0, "details": {}}
-        total_chats = 0
-        new_chats = 0
-        total_phones = 0
-        rating = 0
-        reviews_info = {"total_reviews": 0, "period_reviews": 0}
-        promotion_info = {"total_items": 0, "xl_promotion_count": 0}
-        items_stats = {"total_views": 0, "total_contacts": 0, "total_favorites": 0}
-        
-        # Создаем ключ для кэша статистики
-        stats_cache_key = f"daily_stats_{user_id}_{yesterday_date}"
-        
-        # Проверяем, есть ли у нас кэшированные данные
-        if hasattr(get_daily_statistics, '_stats_cache') and stats_cache_key in get_daily_statistics._stats_cache:
-            cache_data, cache_time = get_daily_statistics._stats_cache[stats_cache_key]
-            time_diff = (current_time - cache_time).total_seconds() / 60  # Разница в минутах
-            
-            # Используем кэш, если он не старше 30 минут
-            if time_diff < 30:
-                logger.info(f"Использование кэшированной дневной статистики ({time_diff:.1f} минут)")
-                return cache_data
-        
-        # Пытаемся получить расширенную статистику профиля, только если не было ошибок ранее
-        use_profile_stats = True
-        if hasattr(get_daily_statistics, '_profile_stats_errors'):
-            # Если было слишком много ошибок (429) в течение последнего часа, не запрашиваем API
-            last_error_time, error_count = get_daily_statistics._profile_stats_errors
-            if (current_time - last_error_time).total_seconds() < 3600 and error_count > 3:
-                logger.warning("Пропуск запроса к API статистики из-за предыдущих ошибок (Too Many Requests)")
-                use_profile_stats = False
-        else:
-            get_daily_statistics._profile_stats_errors = (datetime.datetime.min, 0)
-        
-        profile_stats = {}
-        if use_profile_stats:
-            # Получаем расширенную статистику профиля за вчерашний день
-            profile_stats = get_profile_statistics(access_token, user_id, date_from=yesterday_date, date_to=yesterday_date)
-        
-        # Если статистика успешно получена, используем ее
-        if profile_stats:
-            # Используем статистику профиля для звонков и чатов
-            total_calls = profile_stats.get('calls', 0)
-            total_chats = profile_stats.get('chats', 0)
-            
-            # Обновляем статистику объявлений
-            items_stats = {
-                "total_views": profile_stats.get('views', 0),
-                "total_contacts": profile_stats.get('contacts', 0),
-                "total_favorites": profile_stats.get('favorites', 0)
-            }
-            
-            # Обновляем расходы
-            spending = profile_stats.get('spending', {})
-            if spending:
-                expenses_info = {
-                    "total": spending.get('total', 0),
-                    "details": {
-                        "Размещение объявлений": {
-                            "amount": spending.get('presence', 0),
-                            "count": 1,
-                            "type": "размещение",
-                            "items": []
-                        },
-                        "Продвижение объявлений": {
-                            "amount": spending.get('promo', 0),
-                            "count": 1,
-                            "type": "продвижение",
-                            "items": []
-                        }
-                    }
-                }
-            
-            # Обновляем информацию о количестве объявлений
-            promotion_info["total_items"] = profile_stats.get('active_items', 0)
-            
-            # Сбрасываем счетчик ошибок
-            get_daily_statistics._profile_stats_errors = (datetime.datetime.min, 0)
-        else:
-            # Если получили ошибку 429, обновляем счетчик ошибок
-            if hasattr(get_profile_statistics, 'last_error_code') and get_profile_statistics.last_error_code == 429:
-                last_error_time, error_count = get_daily_statistics._profile_stats_errors
-                if (current_time - last_error_time).total_seconds() > 3600:
-                    # Если последняя ошибка была больше часа назад, сбрасываем счетчик
-                    get_daily_statistics._profile_stats_errors = (current_time, 1)
-                else:
-                    # Увеличиваем счетчик ошибок
-                    get_daily_statistics._profile_stats_errors = (last_error_time, error_count + 1)
-                
-                logger.warning(f"Зарегистрирована ошибка API статистики (429), всего: {error_count + 1} за последний час")
-            
-            # Если расширенная статистика недоступна, используем старые методы
-            try:
-                # Получаем статистику звонков за вчерашний день
-                total_calls = get_total_calls(access_token, yesterday_start, yesterday_end)
-                missed_calls = get_missed_calls(access_token, yesterday_start, yesterday_end)
-            except Exception as e:
-                logger.error(f"Ошибка при получении статистики звонков: {e}")
-            
-            try:
-                # Получаем чаты за вчерашний день
-                total_chats = get_user_chats(access_token, yesterday_start, yesterday_end)
-            except Exception as e:
-                logger.error(f"Ошибка при получении информации о чатах: {e}")
-                
-            try:
-                # Получаем информацию о объявлениях за вчерашний день
-                item_ids = get_user_items_stats(access_token, user_id, date_from=yesterday_start, date_to=yesterday_end)
-                items_stats = get_items_statistics(access_token, user_id, item_ids, date_from=yesterday_start, date_to=yesterday_end)
-                promotion_info = get_item_promotion_info(access_token, user_id, item_ids)
-            except Exception as e:
-                logger.error(f"Ошибка при получении информации об объявлениях: {e}")
-                
-            try:
-                # Получаем информацию о расходах за вчерашний день
-                expenses_info = get_operations_history(access_token, yesterday_start, yesterday_end)
-            except Exception as e:
-                logger.error(f"Ошибка при получении информации о расходах: {e}")
-        
-        # Дополняем данные, которые нельзя получить из расширенной статистики
-        try:
-            # Если статистика профиля не вернула пропущенные звонки, получаем их отдельно
-            if missed_calls == 0 and total_calls > 0:
-                missed_calls = get_missed_calls(access_token, yesterday_start, yesterday_end)
-        except Exception as e:
-            logger.error(f"Ошибка при получении информации о пропущенных звонках: {e}")
-            
-        try:
-            # Получаем новые чаты за период (функция использует фильтрацию по дате)
-            new_chats = get_chats_by_time(access_token, yesterday_start)
-            total_phones = get_all_numbers(access_token, yesterday_start, yesterday_end)
-        except Exception as e:
-            logger.error(f"Ошибка при получении дополнительной информации о чатах и телефонах: {e}")
-        
-        try:
-            # Получаем полную информацию о балансе (текущую)
-            balance_info = get_user_balance_info(access_token, user_id)
-        except Exception as e:
-            logger.error(f"Ошибка при получении информации о балансе: {e}")
-        
-        try:
-            # Получаем рейтинг и отзывы
-            rating = get_user_rating_info(access_token)
-            reviews_info = get_user_reviews(access_token, yesterday_start, yesterday_end)
-        except Exception as e:
-            logger.error(f"Ошибка при получении информации о рейтинге и отзывах: {e}")
-        
-        # Формируем и возвращаем полную статистику за вчерашний день
-        result = {
-            "date": yesterday_date,
-            "calls": {
-                "total": total_calls,
-                "missed": missed_calls,
-                "answered": total_calls - missed_calls
-            },
-            "balance_real": balance_info["balance_real"],
-            "balance_bonus": balance_info["balance_bonus"],
-            "advance": balance_info["advance"],
-            "expenses": expenses_info,
-            "chats": {
-                "total": total_chats,
-                "new": new_chats
-            },
-            "phones_received": total_phones,
-            "rating": rating,
-            "reviews": {
-                "total": reviews_info["total_reviews"],
-                "today": reviews_info["period_reviews"]
-            },
-            "items": {
-                "total": promotion_info["total_items"],
-                "with_xl_promotion": promotion_info["xl_promotion_count"]
-            },
-            "statistics": {
-                "views": items_stats["total_views"],
-                "contacts": items_stats["total_contacts"],
-                "favorites": items_stats["total_favorites"]
-            }
-        }
-        
-        # Сохраняем результат в кэш
-        if not hasattr(get_daily_statistics, '_stats_cache'):
-            get_daily_statistics._stats_cache = {}
-        get_daily_statistics._stats_cache[stats_cache_key] = (result, current_time)
-        
-        logger.info(f"Дневная статистика за вчера успешно получена")
-        return result
-        
-    except Exception as e:
-        logger.error(f"Ошибка при получении дневной статистики: {e}")
-        # Возвращаем структуру с нулевыми значениями в случае ошибки
-        yesterday = (datetime.datetime.now() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-        return {
-            "date": yesterday,
-            "calls": {"total": 0, "missed": 0, "answered": 0},
-            "balance_real": 0,
-            "balance_bonus": 0,
-            "advance": 0,
-            "expenses": {"total": 0, "details": {}},
-            "chats": {"total": 0, "new": 0},
-            "phones_received": 0,
-            "rating": 0,
-            "reviews": {"total": 0, "today": 0},
-            "items": {"total": 0, "with_xl_promotion": 0},
-            "statistics": {"views": 0, "contacts": 0, "favorites": 0}
-        }
-
-
-def get_weekly_statistics(client_id, client_secret):
-    try:
-        # Получаем текущую дату и дату неделю назад
-        current_time = datetime.datetime.now()
-        week_ago = current_time - datetime.timedelta(days=7)
-        week_start = week_ago.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
-        week_end = current_time.strftime("%Y-%m-%dT%H:%M:%SZ")
-        
-        # Форматы дат для разных API
-        week_start_date = week_ago.strftime("%Y-%m-%d")
-        week_end_date = current_time.strftime("%Y-%m-%d")
-        
-        logger.info(f"Запрос недельной статистики с {week_start_date} по {week_end_date}")
-        
-        # Создаем ключ для кэша статистики
-        stats_cache_key = f"weekly_stats_{week_start_date}_{week_end_date}"
-        
-        # Проверяем, есть ли у нас кэшированные данные
-        if hasattr(get_weekly_statistics, '_stats_cache') and stats_cache_key in get_weekly_statistics._stats_cache:
-            cache_data, cache_time = get_weekly_statistics._stats_cache[stats_cache_key]
-            time_diff = (current_time - cache_time).total_seconds() / 60  # Разница в минутах
-            
-            # Используем кэш, если он не старше 60 минут
-            if time_diff < 60:
-                logger.info(f"Использование кэшированной недельной статистики ({time_diff:.1f} минут)")
-                return cache_data
-        
-        # Получаем токен доступа
-        access_token = get_access_token(client_id, client_secret)
-        if not access_token:
-            logger.error("Не удалось получить токен доступа")
-            raise Exception("Не удалось получить токен доступа")
-            
-        user_id = get_avito_user_id(client_id, client_secret)
-        if not user_id:
-            logger.error("Не удалось получить ID пользователя")
-            raise Exception("Не удалось получить ID пользователя")
-        
-        # Инициализируем значения по умолчанию
-        total_calls = 0
-        missed_calls = 0
-        balance_info = {"balance_real": 0, "balance_bonus": 0, "advance": 0}
-        expenses_info = {"total": 0, "details": {}}
-        total_chats = 0
-        new_chats = 0
-        total_phones = 0
-        rating = 0
-        reviews_info = {"total_reviews": 0, "period_reviews": 0}
-        promotion_info = {"total_items": 0, "xl_promotion_count": 0}
-        items_stats = {"total_views": 0, "total_contacts": 0, "total_favorites": 0}
-        
-        # Пытаемся получить расширенную статистику профиля, только если не было ошибок ранее
-        use_profile_stats = True
-        if hasattr(get_daily_statistics, '_profile_stats_errors'):
-            # Проверяем, были ли ошибки в дневной статистике
-            last_error_time, error_count = get_daily_statistics._profile_stats_errors
-            if (current_time - last_error_time).total_seconds() < 3600 and error_count > 3:
-                logger.warning("Пропуск запроса к API статистики из-за предыдущих ошибок (Too Many Requests)")
-                use_profile_stats = False
-        
-        profile_stats = {}
-        if use_profile_stats:
-            # Получаем расширенную статистику профиля
-            profile_stats = get_profile_statistics(access_token, user_id, date_from=week_start_date, date_to=week_end_date)
-        
-        # Если статистика успешно получена, используем ее
-        if profile_stats:
-            # Используем статистику профиля для звонков и чатов
-            total_calls = profile_stats.get('calls', 0)
-            total_chats = profile_stats.get('chats', 0)
-            
-            # Обновляем статистику объявлений
-            items_stats = {
-                "total_views": profile_stats.get('views', 0),
-                "total_contacts": profile_stats.get('contacts', 0),
-                "total_favorites": profile_stats.get('favorites', 0)
-            }
-            
-            # Обновляем расходы
-            spending = profile_stats.get('spending', {})
-            if spending:
-                expenses_info = {
-                    "total": spending.get('total', 0),
-                    "details": {
-                        "Размещение объявлений": {
-                            "amount": spending.get('presence', 0),
-                            "count": 1,
-                            "type": "размещение",
-                            "items": []
-                        },
-                        "Продвижение объявлений": {
-                            "amount": spending.get('promo', 0),
-                            "count": 1,
-                            "type": "продвижение",
-                            "items": []
-                        }
-                    }
-                }
-            
-            # Обновляем информацию о количестве объявлений
-            promotion_info["total_items"] = profile_stats.get('active_items', 0)
-        else:
-            # Если расширенная статистика недоступна, используем старые методы
-            try:
-                # Получаем статистику звонков
-                total_calls = get_total_calls(access_token, week_start, week_end)
-                missed_calls = get_missed_calls(access_token, week_start, week_end)
-            except Exception as e:
-                logger.error(f"Ошибка при получении статистики звонков: {e}")
-                
-            try:
-                # Получаем чаты
-                total_chats = get_user_chats(access_token, week_start, week_end)
-            except Exception as e:
-                logger.error(f"Ошибка при получении информации о чатах: {e}")
-                
-            try:
-                # Получаем информацию о объявлениях
-                item_ids = get_user_items_stats(access_token, user_id, date_from=week_start, date_to=week_end)
-                items_stats = get_items_statistics(access_token, user_id, item_ids, date_from=week_start, date_to=week_end)
-                promotion_info = get_item_promotion_info(access_token, user_id, item_ids)
-            except Exception as e:
-                logger.error(f"Ошибка при получении информации об объявлениях: {e}")
-                
-            try:
-                # Получаем информацию о расходах
-                expenses_info = get_operations_history(access_token, week_start, week_end)
-            except Exception as e:
-                logger.error(f"Ошибка при получении информации о расходах: {e}")
-        
-        # Дополняем данные, которые нельзя получить из расширенной статистики
-        try:
-            # Если статистика профиля не вернула пропущенные звонки, получаем их отдельно
-            if missed_calls == 0 and total_calls > 0:
-                missed_calls = get_missed_calls(access_token, week_start, week_end)
-        except Exception as e:
-            logger.error(f"Ошибка при получении информации о пропущенных звонках: {e}")
-            
-        try:
-            # Получаем новые чаты за период
-            new_chats = get_chats_by_time(access_token, week_start)
-            total_phones = get_all_numbers(access_token, week_start, week_end)
-        except Exception as e:
-            logger.error(f"Ошибка при получении дополнительной информации о чатах и телефонах: {e}")
-        
-        try:
-            # Получаем полную информацию о балансе
-            balance_info = get_user_balance_info(access_token, user_id)
-        except Exception as e:
-            logger.error(f"Ошибка при получении информации о балансе: {e}")
-        
-        try:
-            # Получаем рейтинг и отзывы
-            rating = get_user_rating_info(access_token)
-            reviews_info = get_user_reviews(access_token, week_start, week_end)
-        except Exception as e:
-            logger.error(f"Ошибка при получении информации о рейтинге и отзывах: {e}")
-        
-        # Формируем и возвращаем полную статистику за неделю
-        result = {
-            "period": f"{week_ago.strftime('%Y-%m-%d')} - {current_time.strftime('%Y-%m-%d')}",
-            "calls": {
-                "total": total_calls,
-                "missed": missed_calls,
-                "answered": total_calls - missed_calls
-            },
-            "balance_real": balance_info["balance_real"],
-            "balance_bonus": balance_info["balance_bonus"],
-            "advance": balance_info["advance"],
-            "expenses": expenses_info,
-            "chats": {
-                "total": total_chats,
-                "new": new_chats
-            },
-            "phones_received": total_phones,
-            "rating": rating,
-            "reviews": {
-                "total": reviews_info["total_reviews"],
-                "weekly": reviews_info["period_reviews"]
-            },
-            "items": {
-                "total": promotion_info["total_items"],
-                "with_xl_promotion": promotion_info["xl_promotion_count"]
-            },
-            "statistics": {
-                "views": items_stats["total_views"],
-                "contacts": items_stats["total_contacts"],
-                "favorites": items_stats["total_favorites"]
-            }
-        }
-        
-        # Сохраняем результат в кэш
-        if not hasattr(get_weekly_statistics, '_stats_cache'):
-            get_weekly_statistics._stats_cache = {}
-        get_weekly_statistics._stats_cache[stats_cache_key] = (result, current_time)
-        
-        logger.info(f"Недельная статистика успешно получена")
-        return result
-        
-    except Exception as e:
-        logger.error(f"Ошибка при получении недельной статистики: {e}")
-        # Возвращаем структуру с нулевыми значениями в случае ошибки
-        return {
-            "period": f"{week_ago.strftime('%Y-%m-%d')} - {current_time.strftime('%Y-%m-%d')}",
-            "calls": {"total": 0, "missed": 0, "answered": 0},
-            "balance_real": 0,
-            "balance_bonus": 0,
-            "advance": 0,
-            "expenses": {"total": 0, "details": {}},
-            "chats": {"total": 0, "new": 0},
-            "phones_received": 0,
-            "rating": 0,
-            "reviews": {"total": 0, "weekly": 0},
-            "items": {"total": 0, "with_xl_promotion": 0},
-            "statistics": {"views": 0, "contacts": 0, "favorites": 0}
-        }
-
 def get_operations_history(access_token, date_from, date_to):
     """
     Получает историю операций пользователя за указанный период
@@ -1248,7 +803,22 @@ def get_operations_history(access_token, date_from, date_to):
         # Парсим JSON ответ
         try:
             result = response.json()
-            logger.info(f"Получен ответ от API операций с {len(result.get('operations', []))} операциями")
+            # Вывод в консоль полученных данных для отладки
+            print(f"Получены данные по операциям от API /core/v1/accounts/operations_history/: {result}")
+            
+            # Получаем операции из ответа API
+            # API может возвращать операции в разных форматах:
+            # 1. {'operations': [...]}
+            # 2. {'result': {'operations': [...]}}
+            operations = []
+            if 'operations' in result:
+                # Формат 1: операции находятся непосредственно в поле "operations"
+                operations = result['operations']
+            elif 'result' in result and 'operations' in result['result']:
+                # Формат 2: операции находятся внутри "result.operations"
+                operations = result['result']['operations']
+                
+            logger.info(f"Получен ответ от API операций с {len(operations)} операциями")
         except json.JSONDecodeError as e:
             logger.error(f"Ошибка декодирования JSON: {e}, содержимое ответа: {response.text}")
             return {'total': 0, 'details': {}}
@@ -1258,7 +828,7 @@ def get_operations_history(access_token, date_from, date_to):
         expenses_details = {}
         
         # Обрабатываем все операции
-        for operation in result.get('operations', []):
+        for operation in operations:
             # Тип операции
             operation_type = operation.get('operationType', '')
             
@@ -1275,7 +845,7 @@ def get_operations_history(access_token, date_from, date_to):
             if operation_type.lower() not in [t.lower() for t in expense_types]:
                 continue
                 
-            # Получаем сумму расхода
+            # Получаем сумму расхода (гарантируем преобразование в float)
             amount_rub = float(operation.get('amountRub', 0))
             if amount_rub <= 0:
                 continue
@@ -1316,10 +886,12 @@ def get_operations_history(access_token, date_from, date_to):
         
         # Формируем структуру с результатами
         result = {
-            'total': total_expenses,
+            'total': round(total_expenses, 2),  # Округляем до 2 знаков
             'details': expenses_details
         }
         
+        # Вывод в консоль результата для отладки
+        print(f"Обработанные данные о расходах: {result}")
         logger.info(f"Расходы за период: общая сумма {total_expenses:.2f} руб., {len(expenses_details)} категорий")
         return result
     except Exception as e:
@@ -1329,17 +901,23 @@ def get_operations_history(access_token, date_from, date_to):
             'details': {}
         }
 
-def get_daily_expenses(access_token):
-    """Получает расходы за текущий день"""
-    # Получаем текущую дату и начало дня
-    current_time = datetime.datetime.now()
+def get_daily_expenses(access_token, date=None):
+    """Получает расходы за указанный день или текущий день если дата не указана"""
+    if date is None:
+        # Если дата не указана, используем текущую дату
+        current_time = datetime.datetime.now()
+    else:
+        # Используем переданную дату
+        current_time = date
+        
+    # Вычисляем начало и конец указанного дня
     day_start = current_time.replace(hour=0, minute=0, second=0, microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
-    current_iso = current_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+    day_end = current_time.replace(hour=23, minute=59, second=59, microsecond=999999).strftime("%Y-%m-%dT%H:%M:%SZ")
     
-    logger.info(f"Запрос дневных расходов с {day_start} по {current_iso}")
+    logger.info(f"Запрос расходов за день {current_time.strftime('%d.%m.%Y')} с {day_start} по {day_end}")
     
     # Получаем расходы
-    return get_operations_history(access_token, day_start, current_iso)
+    return get_operations_history(access_token, day_start, day_end)
 
 def get_weekly_expenses(access_token):
     """Получает расходы за текущую неделю"""
